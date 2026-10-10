@@ -52,12 +52,12 @@ export const LOCKFILE_VERSION_0_4 = 0.4
  * Readers stay broader than the writer ({@link SUPPORTED_LOCKFILE_VERSIONS}),
  * but that is a compatibility property of the format, not a staged rollout:
  * this package, the engine, and the CLI compile into a single artifact from
- * a single commit, so no build can ever contain a `0.3` writer alongside a
- * `0.2`-only reader. Cross-version safety for a teammate on an older CLI
- * comes from that CLI failing closed on an unrecognized version, which is
- * true the moment the format ships.
+ * a single commit, so no build can ever contain a `0.4` writer alongside a
+ * reader that cannot parse it. Cross-version safety for a teammate on an
+ * older CLI comes from that CLI failing closed on an unrecognized version,
+ * which is true the moment the format ships.
  */
-export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_3
+export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_4
 
 /**
  * The MCP declaration-fingerprint encoding lockfile `0.4` server records are
@@ -426,16 +426,19 @@ export type Lockfile04ServerEntry = typeof Lockfile04Server.infer
  * {@link CURRENT_LOCKFILE_VERSION}. An alias, so the writer cutover is one
  * edit at the constant rather than a rename across every call site.
  */
-export const CurrentLockfileSchema = Lockfile03Schema
+export const CurrentLockfileSchema = Lockfile04Schema
 
 /** Inferred TypeScript type for a validated current lockfile */
 export type CurrentLockfile = typeof CurrentLockfileSchema.infer
 
 /** Inferred type for a facet entry inside a current lockfile */
-export type CurrentLockfileFacet = Lockfile03Facet
+export type CurrentLockfileFacet = Lockfile04Facet
 
 /** Inferred type for a current asset entry with its materialization disposition */
-export type CurrentLockfileAssetEntry = Lockfile03AssetEntry
+export type CurrentLockfileAssetEntry = Lockfile04AssetEntry
+
+/** Inferred type for one authored server record inside a current facet entry */
+export type CurrentLockfileServerEntry = Lockfile04ServerEntry
 
 /** Inferred type for one materialized-file integrity record */
 export type LockfileFileRecord = typeof LockfileAssetFileRecord.infer

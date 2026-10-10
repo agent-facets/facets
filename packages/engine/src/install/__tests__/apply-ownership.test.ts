@@ -1252,8 +1252,8 @@ describe('apply — frozen reproduction of recorded intent', () => {
     })
     if (result.ok) expect.unreachable()
     // Coverage is fine, so this must be the collision report — with every
-    // claimant named, exactly as a non-interactive install would get it.
-    if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
+    // claimant named, from locked metadata alone.
+    if (result.failure.code !== 'LOCKED_MATERIALIZATION_COLLISION') expect.unreachable()
     expect(result.failure.groups).toHaveLength(1)
     expect(result.failure.groups[0]?.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
     expectUntouched(lock, manifestText)

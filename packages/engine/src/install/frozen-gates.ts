@@ -1,16 +1,26 @@
 import {
+  compareCodeUnits,
   type FacetContribution,
   LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   lockedDispositionOf,
+  type PlanLockedServerInventoryResult,
+  planLockedServerInventory,
   planMaterialization,
   type SupportedLockfile,
   type SupportedLockfileVersion,
   sameDisposition,
 } from '@agent-facets/protocol'
-import { countAssetOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
+import { countAssetOverrides, countServerOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
+import type { MaterializationAliasProblem } from './commit/collision-plan.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
 import { ownEntry } from './own-entry.ts'
-import type { LockfileDriftEntry, RunInstallFailure, StaleMaterializationOverride } from './types.ts'
+import type {
+  LockedMaterializationCollisionGroup,
+  LockfileDriftEntry,
+  RunInstallFailure,
+  StaleMaterializationOverride,
+} from './types.ts'
 
 /**
  * The frozen-lockfile consistency gate.
@@ -54,88 +64,143 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     return { code: 'LOCKFILE_DRIFT', facets: coverage }
   }
 
-  // 2. Format. A `0.2` lockfile has no place to record a disposition, so
-  //    every asset in it reads as authored. Comparing an alias against that
+  // 2. Format. Each disposition domain has its own exact capability set —
+  //    never a numeric comparison, and never "is it the writer version". A
+  //    `0.2` lockfile has nowhere to record an asset disposition, and no
+  //    legacy format records servers at all. Comparing intent against that
   //    would report drift — true, but it would send the user hunting for a
-  //    disagreement when the real problem is that this lockfile predates the
+  //    disagreement when the real problem is that the file predates the
   //    concept and needs one non-frozen install to migrate.
-  if (lockfileVersion !== LOCKFILE_VERSION_0_3) {
-    const unrepresentable: LockfileDriftEntry[] = []
-    for (const [name, entry] of Object.entries(facets)) {
-      // Asset groups only: this gate asks whether the lockfile VERSION can
-      // record what the entry declares, and no lockfile version records a
-      // server disposition. Counting one here reported an unrepresentable
-      // materialization whose "fix" — migrate to `0.3` — would change nothing.
-      if (countAssetOverrides(entry.overrides) === 0) continue
-      unrepresentable.push({
-        name,
-        reason: 'materialization-unrepresentable',
-        lockfileVersion,
-        requiredVersion: LOCKFILE_VERSION_0_3,
-      })
-    }
-    if (unrepresentable.length > 0) {
-      return { code: 'LOCKFILE_DRIFT', facets: unrepresentable }
-    }
+  const unrepresentable: LockfileDriftEntry[] = []
+  for (const name of Object.keys(facets).sort(compareCodeUnits)) {
+    const overrides = ownEntry(facets, name)?.overrides
+    const needsServers = !SERVER_DISPOSITION_FORMATS.has(lockfileVersion) && countServerOverrides(overrides) > 0
+    const needsAssets = !ASSET_DISPOSITION_FORMATS.has(lockfileVersion) && countAssetOverrides(overrides) > 0
+    if (!needsServers && !needsAssets) continue
+    unrepresentable.push({
+      name,
+      reason: 'materialization-unrepresentable',
+      lockfileVersion,
+      // The capability that is actually missing, not the writer version. A
+      // facet needing both reports the one that covers both.
+      requiredVersion: needsServers ? LOCKFILE_VERSION_0_4 : LOCKFILE_VERSION_0_3,
+    })
+  }
+  if (unrepresentable.length > 0) {
+    return { code: 'LOCKFILE_DRIFT', facets: unrepresentable }
   }
 
-  // 3. Plan over the LOCKED asset set. Frozen mode reproduces what the
-  //    lockfile records, so the locked assets — not a fresh resolution — are
-  //    the authority for what exists. Reusing the shared planner means the
-  //    frozen gate cannot develop its own idea of what collides.
-  const contributions: FacetContribution[] = Object.keys(facets)
-    .sort()
-    .map((name) => ({
-      facet: name,
-      assets: (ownEntry(previousLockfile.facets, name)?.assets ?? []).map((asset) => ({
-        scope: asset.scope,
-        type: asset.type,
-        name: asset.name,
-      })),
-      overrides: ownEntry(facets, name)?.overrides,
-    }))
-
-  const planned = planMaterialization(contributions)
-  if (!planned.ok) {
-    if (planned.reason === 'invalid-alias') {
-      return {
-        code: 'MATERIALIZATION_ALIAS_INVALID',
-        problems: planned.problems.map((problem) => ({
-          kind: 'asset' as const,
-          facet: problem.facet,
-          assetType: problem.type,
-          authoredName: problem.authoredName,
-          alias: problem.alias,
-          reason: problem.reason,
+  // 3. Plan over the LOCKED contribution set. Frozen mode reproduces what the
+  //    lockfile records, so the locked assets and servers — not a fresh
+  //    resolution — are the authority for what exists. Reusing the shared
+  //    planners means the frozen gate cannot develop its own idea of what
+  //    collides. Every manifest facet participates, including one with no
+  //    contributions, so its stale overrides are still found.
+  const names = Object.keys(facets).sort(compareCodeUnits)
+  const assetPlan = planMaterialization(
+    names.map(
+      (name): FacetContribution => ({
+        facet: name,
+        assets: (ownEntry(previousLockfile.facets, name)?.assets ?? []).map((asset) => ({
+          scope: asset.scope,
+          type: asset.type,
+          name: asset.name,
         })),
-      }
-    }
-    // Unresolved collisions in recorded state. Frozen mode never prompts, so
-    // this is the same complete report a non-interactive install would get —
-    // just delivered before anything was downloaded.
-    return {
-      code: 'MATERIALIZATION_COLLISION',
-      groups: planned.groups.map((group) => ({ kind: 'asset' as const, group })),
-      staleOverrides: planned.staleOverrides.map((stale) => ({
-        facet: stale.facet,
-        contribution: { kind: 'asset', assetType: stale.type },
-        authoredName: stale.authoredName,
-        disposition: stale.disposition,
-      })),
-    }
+        overrides: ownEntry(facets, name)?.overrides,
+      }),
+    ),
+  )
+  // Only `0.4` records servers. A legacy format reaching here carries no
+  // server override (the format gate refused those), so there is no server
+  // intent to check before fetch — declarations are verified after it.
+  const serverPlan = lockedServerPlan(names, facets, previousLockfile)
+
+  const problems: MaterializationAliasProblem[] = [
+    ...(!assetPlan.ok && assetPlan.reason === 'invalid-alias'
+      ? assetPlan.problems.map(
+          (problem): MaterializationAliasProblem => ({
+            kind: 'asset',
+            facet: problem.facet,
+            assetType: problem.type,
+            authoredName: problem.authoredName,
+            alias: problem.alias,
+            reason: problem.reason,
+          }),
+        )
+      : []),
+    ...(serverPlan !== null && !serverPlan.ok && serverPlan.reason === 'invalid-alias'
+      ? serverPlan.problems.map(
+          (problem): MaterializationAliasProblem => ({
+            kind: 'mcp-server',
+            facet: problem.facet,
+            authoredName: problem.authoredName,
+            alias: problem.alias,
+            reason: problem.reason,
+          }),
+        )
+      : []),
+  ]
+  if (problems.length > 0) return { code: 'MATERIALIZATION_ALIAS_INVALID', problems }
+
+  // Stale intent from whichever domain still planned, so a collision in one
+  // does not hide the other's diagnostics.
+  const staleOverrides: StaleMaterializationOverride[] = [
+    ...(assetPlan.ok || assetPlan.reason === 'collision'
+      ? assetPlan.staleOverrides.map(
+          (stale): StaleMaterializationOverride => ({
+            facet: stale.facet,
+            contribution: { kind: 'asset', assetType: stale.type },
+            authoredName: stale.authoredName,
+            disposition: stale.disposition,
+          }),
+        )
+      : []),
+    ...(serverPlan !== null && (serverPlan.ok || serverPlan.reason === 'collision')
+      ? serverPlan.staleOverrides.map(
+          (stale): StaleMaterializationOverride => ({
+            facet: stale.facet,
+            contribution: { kind: 'mcp-server' },
+            authoredName: stale.authoredName,
+            disposition: stale.disposition,
+          }),
+        )
+      : []),
+  ]
+
+  // Unresolved collisions in recorded state, from both identity spaces in one
+  // report. Frozen mode never prompts, so this is the same complete report a
+  // non-interactive install would get — delivered before anything was
+  // downloaded, and naming servers by fingerprint because no declaration has
+  // been read.
+  const groups: LockedMaterializationCollisionGroup[] = [
+    ...(!assetPlan.ok && assetPlan.reason === 'collision'
+      ? assetPlan.groups.map((group): LockedMaterializationCollisionGroup => ({ kind: 'asset', group }))
+      : []),
+    ...(serverPlan !== null && !serverPlan.ok && serverPlan.reason === 'collision'
+      ? serverPlan.groups.map((group): LockedMaterializationCollisionGroup => ({ kind: 'mcp-server', group }))
+      : []),
+  ]
+  if (groups.length > 0) return { code: 'LOCKED_MATERIALIZATION_COLLISION', groups, staleOverrides }
+  // Every failure arm was handled above, so both planners succeeded. Reaching
+  // this with a failed plan is a bug, and passing the gate on it would be the
+  // one wrong answer.
+  if (!assetPlan.ok || (serverPlan !== null && !serverPlan.ok)) {
+    throw new Error('frozen gate invariant: a failed plan reported neither an invalid alias nor a collision')
   }
 
   // 4. Stale intent. A normal install prunes these inside its transaction;
   //    frozen mode has no transaction to prune in.
-  const drift: LockfileDriftEntry[] = planned.staleOverrides.map((stale) => ({
+  const drift: LockfileDriftEntry[] = staleOverrides.map((stale) => ({
     name: stale.facet,
     reason: 'stale-override' as const,
-    contribution: { kind: 'asset', assetType: stale.type },
+    contribution: stale.contribution,
     authoredName: stale.authoredName,
   }))
 
-  // 5. Intent vs. recorded disposition, per locked asset.
-  for (const asset of planned.plan.assets) {
+  // 5. Intent vs. recorded disposition, per locked asset and server. Absent
+  //    intent means authored: a locked alias the manifest no longer asks for
+  //    is drift, not something to keep silently.
+  for (const asset of assetPlan.plan.assets) {
     const locked = ownEntry(previousLockfile.facets, asset.facet)?.assets.find(
       (candidate) =>
         candidate.scope === asset.scope && candidate.type === asset.type && candidate.name === asset.authoredName,
@@ -152,6 +217,22 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
       locked: lockedDisposition,
     })
   }
+  if (serverPlan?.ok && previousLockfile.lockfileVersion === LOCKFILE_VERSION_0_4) {
+    for (const server of serverPlan.planned) {
+      const locked = ownEntry(previousLockfile.facets, server.facet)?.servers.find(
+        (candidate) => candidate.name === server.authoredName,
+      )
+      if (locked === undefined) continue
+      if (sameDisposition(locked.materialization, server.disposition)) continue
+      drift.push({
+        name: server.facet,
+        reason: 'server-materialization-drift',
+        authoredName: server.authoredName,
+        manifest: server.disposition,
+        locked: locked.materialization,
+      })
+    }
+  }
 
   if (drift.length > 0) {
     return { code: 'LOCKFILE_DRIFT', facets: drift }
@@ -160,34 +241,37 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
   return null
 }
 
-/**
- * The frozen server-intent gate, run after resolution.
- *
- * It cannot join {@link checkFrozenConsistency}: that gate answers from the
- * manifest and lockfile alone, and a server declaration lives inside the
- * integrity-pinned `facet.json`. Whether an override still names something
- * the facet declares is simply unanswerable before the archive is fetched and
- * verified — the price of keeping declarations out of a shared lockfile.
- *
- * What it must preserve is the ordering: this runs before the journal opens
- * and before any cleanup, so a frozen run that is going to refuse has not
- * deleted anything first. A normal install prunes a stale override inside its
- * transaction; frozen mode has no transaction to prune in, so it reports.
- */
-export function checkFrozenServerIntent(
-  staleOverrides: readonly StaleMaterializationOverride[],
-): RunInstallFailure | null {
-  const drift: LockfileDriftEntry[] = staleOverrides
-    // Asset staleness is already reported by the pre-fetch gate above, from
-    // the locked set. Reporting it again here would double-count it.
-    .filter((stale) => stale.contribution.kind === 'mcp-server')
-    .map((stale) => ({
-      name: stale.facet,
-      reason: 'stale-override' as const,
-      contribution: stale.contribution,
-      authoredName: stale.authoredName,
-    }))
+/** Lockfile formats that record an asset's materialization disposition. */
+const ASSET_DISPOSITION_FORMATS: ReadonlySet<SupportedLockfileVersion> = new Set([
+  LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
+])
 
-  if (drift.length === 0) return null
-  return { code: 'LOCKFILE_DRIFT', facets: drift }
+/** Lockfile formats that record a server inventory and its dispositions. */
+const SERVER_DISPOSITION_FORMATS: ReadonlySet<SupportedLockfileVersion> = new Set([LOCKFILE_VERSION_0_4])
+
+/**
+ * Plan the manifest's server intent over a `0.4` lockfile's complete locked
+ * inventory, or `null` for a format that records none.
+ *
+ * Discriminated on the document's version tag, never on whether an entry
+ * happens to carry a `servers` member: a legacy document may hold one as an
+ * opaque extension, and that is not an inventory.
+ */
+function lockedServerPlan(
+  names: readonly string[],
+  facets: Readonly<Record<string, NormalizedFacetEntry>>,
+  previousLockfile: SupportedLockfile,
+): PlanLockedServerInventoryResult | null {
+  if (previousLockfile.lockfileVersion !== LOCKFILE_VERSION_0_4) return null
+  return planLockedServerInventory(
+    names.map((name) => ({
+      facet: name,
+      servers: (ownEntry(previousLockfile.facets, name)?.servers ?? []).map((server) => ({
+        name: server.name,
+        fingerprint: server.fingerprint,
+      })),
+      overrides: ownEntry(facets, name)?.overrides,
+    })),
+  )
 }

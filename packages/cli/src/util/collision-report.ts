@@ -1,12 +1,14 @@
 import { terminalLiteral } from '@agent-facets/adapter/terminal'
 import type { AssetType, Scope } from '@agent-facets/common'
 import type {
+  LockedMaterializationCollisionGroup,
   MaterializationAliasProblem,
   MaterializationCollisionGroup,
   RunInstallFailure,
   StaleMaterializationOverride,
 } from '@agent-facets/engine'
 import type {
+  CollisionGroup,
   MaterializationNamespace,
   McpServerFingerprint,
   ReadonlyMcpServerDeclaration,
@@ -75,15 +77,18 @@ export function serverManifestLocation(facet: string, authoredName: string): str
   return `facets[${JSON.stringify(facet)}].materialization.${SERVER_OVERRIDE_GROUP}[${JSON.stringify(authoredName)}]`
 }
 
+/** Either collision report's group: from resolved content, or from locked metadata. */
+type AnyCollisionGroup = MaterializationCollisionGroup | LockedMaterializationCollisionGroup
+
 /** A stable React/list key for one collision group. */
-export function collisionGroupKey(entry: MaterializationCollisionGroup): string {
+export function collisionGroupKey(entry: AnyCollisionGroup): string {
   return entry.kind === 'asset'
     ? `asset:${entry.group.scope}:${entry.group.namespace}:${entry.group.effectiveName}`
     : `mcp-server:${entry.group.effectiveName}`
 }
 
 /** The heading naming what is being contested, and by which name. */
-export function describeCollisionGroup(entry: MaterializationCollisionGroup): string {
+export function describeCollisionGroup(entry: AnyCollisionGroup): string {
   return entry.kind === 'asset' ? describeNamespace(entry.group.namespace, entry.group.scope) : 'MCP servers'
 }
 
@@ -128,18 +133,7 @@ export interface CollisionClaimant {
  * same failure, and only one of them is visible in CI.
  */
 export function collisionClaimants(entry: MaterializationCollisionGroup): CollisionClaimant[] {
-  if (entry.kind === 'asset') {
-    return entry.group.members.map((member) => ({
-      key: `${member.facet}:${member.scope}:${member.type}:${member.authoredName}`,
-      facet: member.facet,
-      label: `${member.scope} ${member.type} ${member.authoredName}`,
-      authoredName: member.authoredName,
-      effectiveName: member.effectiveName,
-      detail: [],
-      location: manifestLocation(member.facet, member.type, member.authoredName),
-      aliasedFrom: aliasedFrom(member),
-    }))
-  }
+  if (entry.kind === 'asset') return assetClaimants(entry.group)
   return entry.group.members.map((member) => ({
     key: `${member.facet}:mcp-server:${member.authoredName}`,
     facet: member.facet,
@@ -150,6 +144,77 @@ export function collisionClaimants(entry: MaterializationCollisionGroup): Collis
     location: serverManifestLocation(member.facet, member.authoredName),
     aliasedFrom: aliasedFrom(member),
   }))
+}
+
+/**
+ * Every claimant of a group found in LOCKED state.
+ *
+ * A server claimant here is known only by its recorded fingerprint — no
+ * content was fetched — so the fingerprint is the whole detail line. It is
+ * shown in full: it is the value a user compares against the lockfile.
+ */
+export function lockedCollisionClaimants(entry: LockedMaterializationCollisionGroup): CollisionClaimant[] {
+  if (entry.kind === 'asset') return assetClaimants(entry.group)
+  return entry.group.members.map((member) => ({
+    key: `${member.facet}:mcp-server:${member.authoredName}`,
+    facet: member.facet,
+    label: `server ${member.authoredName}`,
+    authoredName: member.authoredName,
+    effectiveName: member.effectiveName,
+    detail: [`locked fingerprint ${member.fingerprint}`],
+    location: serverManifestLocation(member.facet, member.authoredName),
+    aliasedFrom: aliasedFrom(member),
+  }))
+}
+
+function assetClaimants(group: CollisionGroup): CollisionClaimant[] {
+  return group.members.map((member) => ({
+    key: `${member.facet}:${member.scope}:${member.type}:${member.authoredName}`,
+    facet: member.facet,
+    label: `${member.scope} ${member.type} ${member.authoredName}`,
+    authoredName: member.authoredName,
+    effectiveName: member.effectiveName,
+    detail: [],
+    location: manifestLocation(member.facet, member.type, member.authoredName),
+    aliasedFrom: aliasedFrom(member),
+  }))
+}
+
+/**
+ * The stderr report for a collision frozen mode found in the RECORDED set.
+ *
+ * Unlike {@link formatCollisionReport} it offers no snippets to paste: frozen
+ * mode refuses any change to recorded intent, including one that would cure
+ * the collision. The choices have to be made by a normal install, which
+ * records them in the lockfile alongside the manifest.
+ */
+export function formatLockedCollisionReport(
+  groups: readonly LockedMaterializationCollisionGroup[],
+  staleOverrides: readonly StaleMaterializationOverride[],
+): string {
+  const lines: string[] = [
+    `The locked contributions collide under the choices in facets.json, so the frozen install stopped`,
+    `before fetching anything. Frozen mode cannot record new choices; make them in a normal install.`,
+    ``,
+  ]
+  for (const entry of groups) {
+    lines.push(`  ${describeCollisionGroup(entry)} — "${entry.group.effectiveName}" is claimed by:`)
+    for (const claimant of lockedCollisionClaimants(entry)) {
+      lines.push(`    • ${claimant.facet}: ${claimant.label} → "${claimant.effectiveName}"${describeAlias(claimant)}`)
+      for (const detail of claimant.detail) lines.push(`        ${detail}`)
+      lines.push(`        at ${claimant.location}`)
+    }
+    lines.push(``)
+  }
+  if (staleOverrides.length > 0) {
+    lines.push(`  Also note — these recorded choices name contributions the locked content does not contain:`)
+    for (const stale of staleOverrides) {
+      lines.push(`    • ${stale.facet}: ${describeContribution(stale.contribution)} "${stale.authoredName}"`)
+    }
+    lines.push(``)
+  }
+  lines.push(...UNCHANGED_FOOTER)
+  return lines.join('\n')
 }
 
 /** The full stderr report for an unresolved collision. */
@@ -341,6 +406,8 @@ export function formatMaterializationDetail(failure: RunInstallFailure): string 
   switch (failure.code) {
     case 'MATERIALIZATION_COLLISION':
       return `${formatCollisionReport(failure.groups, failure.staleOverrides)}\n`
+    case 'LOCKED_MATERIALIZATION_COLLISION':
+      return `${formatLockedCollisionReport(failure.groups, failure.staleOverrides)}\n`
     case 'MATERIALIZATION_RESOLUTION_INVALID':
       return `${formatCollisionReport(failure.groups, [])}\n${failure.problems
         .map((problem) => `  • alias "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)

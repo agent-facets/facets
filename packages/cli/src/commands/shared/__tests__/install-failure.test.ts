@@ -345,9 +345,9 @@ describe('installFailureFix — stale materialization intent under frozen mode',
     ],
   }
 
-  // The lockfile does not record server intent at all, so "run install to
-  // update the lockfile" sends the user to watch the same failure again.
-  // The choice lives in facets.json.
+  // A stale override names a server the locked content does not declare, so
+  // "run install to update the lockfile" sends the user to watch the same
+  // failure again. The choice lives in facets.json.
   test('points at facets.json rather than at the lockfile', () => {
     const fix = installFailureFix(staleServerDrift, notNeeded, 'install')
     expect(fix).toContain('facets.json')
@@ -483,4 +483,39 @@ describe('installFailureFix — a same-integrity server inventory mismatch', () 
       expect(installFailureDetail(failure)).toBe(`code=${failure.code}`)
     })
   }
+})
+
+describe('installFailureFix — a format that cannot record the requested intent', () => {
+  const refusal = (requiredVersion: number): RunInstallFailure => ({
+    code: 'LOCKFILE_DRIFT',
+    facets: [{ name: 'alpha', reason: 'materialization-unrepresentable', lockfileVersion: 0.3, requiredVersion }],
+  })
+
+  test.each(COMMANDS)('names the current writer format rather than the capability version (%s)', (command) => {
+    // The capability a server override needs is `0.4`, an asset-only one
+    // `0.3`; either way a normal run writes the current format, and that is
+    // the version a user needs to hear about.
+    for (const required of [0.3, 0.4]) {
+      const fix = installFailureFix(refusal(required), notNeeded, command)
+      expect(fix).toContain('without --frozen-lockfile')
+      expect(fix).toContain('v0.4')
+      expect(fix).toContain(`facet ${command}`)
+      expect(fix).not.toContain('lockfile is out of date')
+    }
+  })
+})
+
+describe('installFailureFix — a collision in the recorded set', () => {
+  const locked: RunInstallFailure = { code: 'LOCKED_MATERIALIZATION_COLLISION', groups: [], staleOverrides: [] }
+
+  test.each(COMMANDS)('sends a %s user to a run that may record new choices', (command) => {
+    const fix = installFailureFix(locked, notNeeded, command)
+    expect(fix).toContain('without --frozen-lockfile')
+    expect(fix).toContain(`facet ${command}`)
+    expect(fix).toContain('facets.lock')
+  })
+
+  test('an incomplete rollback still outranks it', () => {
+    expect(installFailureFix(locked, partial, 'install')).toContain(describeDiskState(partial))
+  })
 })

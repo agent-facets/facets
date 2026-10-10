@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { fileStatesEqual, isNonEmpty } from '@agent-facets/common'
 import type { PlannedServerConfiguration } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_4, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { batchResidue, FileTransaction, NO_ROLLBACK } from '../fs/index.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
@@ -27,7 +27,7 @@ import {
   describeUnpersistedReceipt,
   type LockedSetCommit,
 } from './commit/tri-write.ts'
-import { checkFrozenConsistency, checkFrozenServerIntent } from './frozen-gates.ts'
+import { checkFrozenConsistency } from './frozen-gates.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets } from './materialize.ts'
@@ -507,7 +507,26 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onLog,
     })
     if (!resolution.ok) {
-      return failureNoMutation(resolution.failure)
+      const failed = await failureNoMutation(resolution.failure)
+      // A removal sent here only because its remaining facets predate server
+      // inventory would otherwise report, say, an unreachable registry with no
+      // hint of why a removal needed one. The cause stays the failure; this
+      // only says why resolution ran.
+      if (
+        !failed.ok &&
+        refinement?.kind === 'not-applicable' &&
+        refinement.reason.code === 'remaining-server-inventory-unavailable'
+      ) {
+        return {
+          ...failed,
+          removalMigration: {
+            reason: 'remaining-server-inventory-unavailable',
+            lockfileVersion: refinement.reason.lockfileVersion,
+            requiredVersion: LOCKFILE_VERSION_0_4,
+          },
+        }
+      }
+      return failed
     }
     const { resolved } = resolution.value
 
@@ -526,17 +545,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const plan = composed.plan
 
-    // 7a0. Frozen server intent. Runs here rather than in the pre-fetch gate
-    //      because whether an override still names a declaration the facet
-    //      publishes is only knowable from the verified archive. Still ahead
-    //      of everything that mutates: a frozen run that refuses has not
-    //      deleted, written, or reconciled anything first.
-    if (frozenLockfile) {
-      const staleServerIntent = checkFrozenServerIntent(plan.staleOverrides)
-      if (staleServerIntent !== null) {
-        return failureNoMutation(staleServerIntent)
-      }
-    }
+    // Frozen server intent needs no check here. A `0.4` lockfile's stale,
+    // colliding, and drifted server intent was refused before fetch from its
+    // locked inventory, and resolution then reconciled that inventory against
+    // the verified content. A legacy lockfile with any server override was
+    // refused before fetch for format capability, and one without overrides
+    // has no server intent to be stale.
 
     // 7a. The MCP configuration ownership index, built from the receipt
     //     STATE. Needed here — before the journal — because both remaining

@@ -204,3 +204,104 @@ describe('FailureBlock — server inventory reconciliation', () => {
     expect(hostile.split('\n')).toHaveLength(clean.split('\n').length)
   })
 })
+
+describe('FailureBlock — frozen checks over locked metadata', () => {
+  const FP_A = `sha256:${'a'.repeat(64)}` as const
+  const FP_B = `sha256:${'b'.repeat(64)}` as const
+
+  function frame(result: Extract<RunInstallResult, { ok: false }>): string {
+    const instance = render(createElement(FailureBlock, { result }))
+    const text = visibleTerminalText(instance.lastFrame() ?? '')
+    instance.unmount()
+    return text
+  }
+
+  const unchanged = { kind: 'not-needed', reason: 'post-lock-no-mutation' } as const
+
+  test('a locked server collision names every claimant by its recorded fingerprint', () => {
+    const text = frame({
+      ok: false,
+      rollback: unchanged,
+      failure: {
+        code: 'LOCKED_MATERIALIZATION_COLLISION',
+        staleOverrides: [],
+        groups: [
+          {
+            kind: 'mcp-server',
+            group: {
+              effectiveName: 'filesystem',
+              members: [
+                {
+                  facet: 'alpha',
+                  authoredName: 'filesystem',
+                  effectiveName: 'filesystem',
+                  fingerprint: FP_A,
+                  disposition: { kind: 'authored' },
+                },
+                {
+                  facet: 'beta',
+                  authoredName: 'fs',
+                  effectiveName: 'filesystem',
+                  fingerprint: FP_B,
+                  disposition: { kind: 'aliased', as: 'filesystem' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    expect(text).toContain('“filesystem” is claimed by')
+    expect(text).toContain('alpha (server filesystem)')
+    expect(text).toContain('beta (server fs)')
+    expect(text).toContain(`locked fingerprint ${FP_A}`)
+    expect(text).toContain(`locked fingerprint ${FP_B}`)
+    expect(text).toContain('Nothing was fetched')
+    expect(text).toContain('without --frozen-lockfile')
+  })
+
+  test('server disposition drift reads as manifest versus lockfile', () => {
+    const text = frame({
+      ok: false,
+      rollback: unchanged,
+      failure: {
+        code: 'LOCKFILE_DRIFT',
+        facets: [
+          {
+            name: 'alpha',
+            reason: 'server-materialization-drift',
+            authoredName: 'filesystem',
+            manifest: { kind: 'authored' },
+            locked: { kind: 'aliased', as: 'fs' },
+          },
+        ],
+      },
+    })
+
+    expect(text).toContain('alpha: server "filesystem": facets.json says authored, lockfile says aliased to "fs"')
+  })
+
+  test('a removal migration is explained beside the failure, never instead of it', () => {
+    const text = frame({
+      ok: false,
+      rollback: unchanged,
+      failure: {
+        code: 'REGISTRY_ERROR',
+        facet: 'planner',
+        error: { code: 'NETWORK_ERROR', cause: 'offline', attempts: 1 },
+      },
+      removalMigration: {
+        reason: 'remaining-server-inventory-unavailable',
+        lockfileVersion: 0.3,
+        requiredVersion: 0.4,
+      },
+    })
+
+    expect(text).toContain('facets.lock v0.3 records no MCP server inventory')
+    expect(text).toContain('to write v0.4')
+    // The actual cause is still the headline it always was.
+    expect(text).toContain('registry error for planner')
+    expect(text.indexOf('v0.3 records')).toBeLessThan(text.indexOf('registry error'))
+  })
+})

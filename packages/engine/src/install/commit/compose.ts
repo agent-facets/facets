@@ -1,11 +1,13 @@
-import type {
-  CurrentLockfileAssetEntry,
-  CurrentLockfileFacet,
-  FacetMaterializationOverrides,
-  MaterializationDisposition,
-  MaterializedAsset,
-  PlannedServer,
-  PlannedServerConfiguration,
+import {
+  type CurrentLockfileAssetEntry,
+  type CurrentLockfileFacet,
+  type CurrentLockfileServerEntry,
+  compareCodeUnits,
+  type FacetMaterializationOverrides,
+  type MaterializationDisposition,
+  type MaterializedAsset,
+  type PlannedServer,
+  type PlannedServerConfiguration,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownRecord } from '../own-entry.ts'
@@ -81,8 +83,9 @@ export type CollisionResolver = (request: CollisionResolutionRequest) => Promise
  *
  * Kept beside the asset half rather than folded into it. The two domains
  * share one planning rule and one override document, but nothing else: a
- * server contributes no lockfile entry, occupies its own identity space, and
- * composes rather than contests when two facets declare it identically.
+ * server is locked as a fingerprint-only record rather than an asset entry,
+ * occupies its own identity space, and composes rather than contests when two
+ * facets declare it identically.
  * Merging them would mean widening `MaterializedAsset` — and therefore
  * `AssetType` — to describe something that is not an asset.
  */
@@ -175,7 +178,9 @@ function facetContributionsOf(args: ComposeArgs): CollisionFacetContribution[] {
 function lockfileEntriesFor(
   resolved: readonly ResolvedFacetRecord[],
   dispositions: ReadonlyMap<string, MaterializationDisposition>,
+  plannedServers: readonly PlannedServer[],
 ): Record<string, CurrentLockfileFacet> {
+  const serversByFacet = serverRecordsByFacet(plannedServers)
   // Null-prototype, like every other facet-keyed map: the key is a name from
   // a user-authored file, and assignment for `__proto__` creates no own key.
   const entries: Record<string, CurrentLockfileFacet> = ownRecord()
@@ -194,9 +199,39 @@ function lockfileEntriesFor(
       version: record.version,
       integrity: record.integrity,
       assets,
+      // Every resolved facet gets an array. Empty only because its verified
+      // definitions declare no server — never because nothing was looked up.
+      servers: serversByFacet.get(record.facet) ?? [],
     }
   }
   return entries
+}
+
+/**
+ * The complete authored server inventory per facet, from the FINAL plan.
+ *
+ * Built from `planned` rather than the active configurations: those drop
+ * omitted servers and fold identical claims from several facets into one,
+ * and the lockfile records each facet's authored set, not the native result.
+ *
+ * Only the three schema fields are copied. A planned server carries its
+ * declaration, and spreading it would write commands and URLs into a shared
+ * file.
+ */
+function serverRecordsByFacet(planned: readonly PlannedServer[]): Map<string, CurrentLockfileServerEntry[]> {
+  const byFacet = new Map<string, CurrentLockfileServerEntry[]>()
+  for (const server of planned) {
+    const record: CurrentLockfileServerEntry = {
+      name: server.authoredName,
+      fingerprint: server.fingerprint,
+      materialization: server.disposition,
+    }
+    const list = byFacet.get(server.facet)
+    if (list) list.push(record)
+    else byFacet.set(server.facet, [record])
+  }
+  for (const list of byFacet.values()) list.sort((a, b) => compareCodeUnits(a.name, b.name))
+  return byFacet
 }
 
 function dispositionKey(facet: string, scope: string, type: string, authoredName: string): string {
@@ -235,7 +270,7 @@ function planWith(
   return {
     ok: true,
     plan: {
-      facetEntries: lockfileEntriesFor(resolved, dispositions),
+      facetEntries: lockfileEntriesFor(resolved, dispositions, planned.servers.planned),
       materialized: planned.assets.materialized,
       mcpServers: planned.servers,
       overrides,

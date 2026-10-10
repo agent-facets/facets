@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
+import { computeMcpServerFingerprint, type McpServerDeclaration } from '@agent-facets/protocol'
 import type { CollisionResolution, CollisionResolutionRequest } from '../commit/compose.ts'
 import { receiptPath } from '../receipt.ts'
 import { runInstall } from '../run-install.ts'
@@ -330,29 +331,112 @@ describe('compose — MCP server composition', () => {
     expect(result.failure.groups.map((g) => g.kind).sort()).toEqual(['asset', 'mcp-server'])
   })
 
-  test('a server-only facet locks with an empty asset list and no server data', async () => {
-    const a = serverFixture('alpha', 'filesystem', STDIO)
-    writeManifest({ facets: { alpha: a } })
-    const { adapter } = recordingAdapter('rec')
+  describe('the locked server inventory', () => {
+    const HTTP = { type: 'http', url: 'https://example.test/mcp' }
 
-    expect(
-      (
-        await runInstall({
-          projectRoot,
-          adapters: [adapter],
-          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
-        })
-      ).ok,
-    ).toBe(true)
+    type WrittenLockfile = {
+      lockfileVersion: number
+      facets: Record<string, { assets: unknown[]; servers: unknown[] }>
+    }
 
-    // The lockfile is unchanged by MCP support: a declaration travels inside
-    // the integrity-pinned `facet.json`, so duplicating it here would give a
-    // shared file a second, unverifiable copy.
-    const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
-    expect(lockfile.lockfileVersion).toBe(0.3)
-    expect(lockfile.facets.alpha.assets).toEqual([])
-    expect(JSON.stringify(lockfile)).not.toContain('npx')
-    expect(JSON.stringify(lockfile)).not.toContain('servers')
+    async function install(manifest: unknown): Promise<WrittenLockfile> {
+      writeManifest(manifest)
+      const result = await runInstall({
+        projectRoot,
+        adapters: [recordingAdapter('rec').adapter],
+        operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+      })
+      if (!result.ok) expect.unreachable(`install failed: ${result.failure.code}`)
+      return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    }
+
+    test('a server-only facet locks an empty asset list and its complete server record', async () => {
+      const lockfile = await install({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+
+      expect(lockfile.lockfileVersion).toBe(0.4)
+      expect(lockfile.facets.alpha?.assets).toEqual([])
+      expect(lockfile.facets.alpha?.servers).toEqual([
+        {
+          name: 'filesystem',
+          fingerprint: computeMcpServerFingerprint(STDIO as McpServerDeclaration),
+          materialization: { kind: 'authored' },
+        },
+      ])
+      // Fingerprint-only: a declaration travels inside the integrity-pinned
+      // `facet.json`, never as a second, unverifiable copy in a shared file.
+      expect(JSON.stringify(lockfile)).not.toContain('npx')
+      expect(JSON.stringify(lockfile)).not.toContain('server-filesystem')
+    })
+
+    test('a facet that declares no server records an explicit empty inventory', async () => {
+      const lockfile = await install({ facets: { alpha: fixture('alpha', 'review') } })
+      expect(lockfile.facets.alpha?.servers).toEqual([])
+    })
+
+    test('identical declarations compose natively but keep a record per facet', async () => {
+      const lockfile = await install({
+        facets: {
+          alpha: serverFixture('alpha', 'filesystem', STDIO),
+          beta: serverFixture('beta', 'filesystem', STDIO),
+        },
+      })
+      const record = {
+        name: 'filesystem',
+        fingerprint: computeMcpServerFingerprint(STDIO as McpServerDeclaration),
+        materialization: { kind: 'authored' },
+      }
+      expect(lockfile.facets.alpha?.servers).toEqual([record])
+      expect(lockfile.facets.beta?.servers).toEqual([record])
+    })
+
+    test('omitted and aliased servers are recorded with their verified fingerprints', async () => {
+      const dir = join(projectRoot, 'vendor', 'alpha')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(
+        join(dir, 'facet.json'),
+        JSON.stringify({ name: 'alpha', version: '1.0.0', servers: { zeta: STDIO, docs: HTTP } }),
+      )
+      const lockfile = await install({
+        manifestVersion: 0.2,
+        facets: {
+          alpha: {
+            source: './vendor/alpha',
+            materialization: { servers: { docs: { kind: 'omitted' }, zeta: { kind: 'aliased', as: 'project-fs' } } },
+          },
+        },
+      })
+
+      // Sorted by authored name; the alias appears only in the disposition.
+      expect(lockfile.facets.alpha?.servers).toEqual([
+        {
+          name: 'docs',
+          fingerprint: computeMcpServerFingerprint(HTTP as McpServerDeclaration),
+          materialization: { kind: 'omitted' },
+        },
+        {
+          name: 'zeta',
+          fingerprint: computeMcpServerFingerprint(STDIO as McpServerDeclaration),
+          materialization: { kind: 'aliased', as: 'project-fs' },
+        },
+      ])
+    })
+
+    test('the written lockfile is byte-identical whatever order facets are declared in', async () => {
+      const a = serverFixture('alpha', 'filesystem', STDIO)
+      const b = serverFixture('beta', 'docs', HTTP)
+      const c = fixture('gamma', 'review')
+
+      await install({ facets: { alpha: a, beta: b, gamma: c } })
+      const first = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+      rmSync(join(projectRoot, 'facets.lock'))
+      rmSync(receiptPath(projectRoot), { force: true })
+      await install({ facets: { gamma: c, beta: b, alpha: a } })
+      const second = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+
+      expect(second).toBe(first)
+      expect(first.endsWith('}\n')).toBe(true)
+      expect(first).toBe(`${JSON.stringify(JSON.parse(first), null, 2)}\n`)
+    })
   })
 
   test('a server override naming an undeclared server is reported as stale, not fatal', async () => {

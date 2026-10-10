@@ -40,16 +40,18 @@ function writeManifest(facets: Record<string, unknown>, extra = ''): void {
   writeFileSync(join(projectRoot, 'facets.json'), extra === '' ? body : `${extra}\n${body}`)
 }
 
-function writeLockfile(facets: Record<string, unknown>): void {
-  writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify({ lockfileVersion: 0.3, facets }, null, 2))
+function writeLockfile(facets: Record<string, unknown>, lockfileVersion: 0.2 | 0.3 | 0.4 = 0.4): void {
+  writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify({ lockfileVersion, facets }, null, 2))
 }
 
-function lockedRegistry(version: string) {
+/** A locked registry entry in the shape its lockfile version defines. */
+function lockedRegistry(version: string, lockfileVersion: 0.2 | 0.3 | 0.4 = 0.4) {
   return {
     source: { kind: 'registry', registry: 'https://registry.test' },
     version,
     integrity: 'sha256:aaaa',
     assets: [],
+    ...(lockfileVersion === 0.4 ? { servers: [] } : {}),
   }
 }
 
@@ -127,6 +129,28 @@ describe('prepareFacetUpdate — side-effect freedom', () => {
 
     if (!result.ok) expect.unreachable()
     expect(projectBytes()).toEqual(before)
+  })
+
+  // Inspecting versions needs no server inventory, so a legacy lockfile is
+  // read as it is: not migrated, and no content fetched to fill one in.
+  test.each([
+    0.2, 0.3, 0.4,
+  ] as const)('reads a %p lockfile without migrating it or acquiring content', async (version) => {
+    writeManifest({ cowsay: '1.*' })
+    writeLockfile({ cowsay: lockedRegistry('1.2.0', version) }, version)
+    const before = projectBytes()
+
+    const result = await prepareFacetUpdate({
+      projectRoot,
+      resolve: resolver({ 'cowsay@target': '1.8.0', 'cowsay@latest': '2.0.0' }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    const row = result.prepared.plan[0]
+    if (row?.kind !== 'candidate') expect.unreachable()
+    expect(row.facet.target.version).toEqual({ kind: 'exact', major: 1, minor: 8, patch: 0 })
+    expect(projectBytes()).toEqual(before)
+    expect(existsSync(join(fakeHome, '.facet'))).toBe(false)
   })
 
   test('creates no receipt, cache, or lock-directory state', async () => {

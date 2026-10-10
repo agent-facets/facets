@@ -35,6 +35,9 @@ async function manifestFor(fixtureDir: string) {
 }
 
 mock.module('../../registry/resolve-metadata.ts', () => ({
+  // Re-exported through the registry barrel, so a mock without it cannot load
+  // when this file runs on its own.
+  MAX_REGISTRY_METADATA_SPECIFIERS: 100,
   resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => {
     const contentFingerprint =
       registryFixtureDir === null ? 'sha256:stub' : (await manifestFor(registryFixtureDir)).integrity
@@ -257,25 +260,27 @@ describe('runRemove — a remaining facet is unavailable', () => {
     return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
   }
 
-  /** Rewrite the lockfile as `0.2` — no dispositions — in place. */
-  function downgradeLockfileTo02(): void {
+  /**
+   * Rewrite the lockfile in place as a legacy document: no server inventory,
+   * and for `0.2` no asset dispositions either. The writer only emits the
+   * current format, so a legacy input can only be a fixture.
+   */
+  function downgradeLockfile(version: 0.2 | 0.3): void {
     const lock = readLock()
-    lock.lockfileVersion = LOCKFILE_VERSION_0_2
+    lock.lockfileVersion = version
     for (const facet of Object.values(lock.facets)) {
+      delete facet.servers
+      if (version !== LOCKFILE_VERSION_0_2) continue
       for (const asset of facet.assets as Array<Record<string, unknown>>) delete asset.materialization
     }
     writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lock, null, 2))
   }
 
-  test.each([
-    ['0.3', () => {}],
-    ['0.2', downgradeLockfileTo02],
-  ])('removes one facet offline while a %s-locked remaining facet is unavailable', async (_version, prepare) => {
+  test('removes one facet offline while a current-format remaining facet is unavailable', async () => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
     const remainingAsset = assetPath('test-adapter', 'planner')
     const remainingBefore = readFileSync(remainingAsset, 'utf8')
-    prepare()
     const lockedRemaining = readLock().facets.planner
     goOffline()
 
@@ -287,19 +292,77 @@ describe('runRemove — a remaining facet is unavailable', () => {
     expect(readFacets().cowsay).toBeUndefined()
     expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
 
-    // The remaining facet is untouched on disk and carried forward verbatim.
+    // The remaining facet is untouched on disk and its entry carried forward
+    // verbatim, server inventory included.
     expect(readFileSync(remainingAsset, 'utf8')).toBe(remainingBefore)
-    const migrated = readLock()
-    expect(migrated.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
-    const remaining = migrated.facets.planner
-    if (remaining === undefined || lockedRemaining === undefined) expect.unreachable()
-    expect(remaining.source).toEqual(lockedRemaining.source)
-    expect(remaining.version).toEqual(lockedRemaining.version)
-    expect(remaining.integrity).toEqual(lockedRemaining.integrity)
-    const assetsOf = (entry: Record<string, unknown>) => entry.assets as Array<Record<string, unknown>>
-    expect(assetsOf(remaining).map((a) => a.files)).toEqual(assetsOf(lockedRemaining).map((a) => a.files))
-    // A `0.2` entry refines to the only disposition it could have meant.
-    for (const asset of assetsOf(remaining)) expect(asset.materialization).toEqual({ kind: 'authored' })
+    const written = readLock()
+    expect(written.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(written.facets.planner).toEqual(lockedRemaining)
+  })
+
+  test.each([
+    0.2, 0.3,
+  ] as const)('a %p-locked remaining facet cannot be refined, and an unavailable one fails the removal intact', async (version) => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    downgradeLockfile(version)
+    const files = () => ({
+      manifest: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lockfile: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      removed: readFileSync(assetPath('test-adapter', 'cowsay'), 'utf8'),
+      remaining: readFileSync(assetPath('test-adapter', 'planner'), 'utf8'),
+    })
+    const before = files()
+    goOffline()
+
+    const events: StageEvent[] = []
+    const result = await remove(['cowsay'], (event) => events.push(event))
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(events).toContainEqual({
+      kind: 'removal-resolution-required',
+      reason: 'remaining-server-inventory-unavailable',
+    })
+    // Why resolution ran travels beside the failure; the failure itself is
+    // still the acquisition that could not happen, not a generic migration.
+    expect(result.install.removalMigration).toEqual({
+      reason: 'remaining-server-inventory-unavailable',
+      lockfileVersion: version,
+      requiredVersion: 0.4,
+    })
+    expect(result.install.failure.code).toBe('REGISTRY_ERROR')
+    // Nothing changed — no partial inventory, no deletion.
+    expect(files()).toEqual(before)
+  })
+
+  test.each([
+    0.2, 0.3,
+  ] as const)('a %p-locked removal migrates once its remaining content is reachable', async (version) => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    downgradeLockfile(version)
+
+    const result = await remove(['cowsay'])
+
+    if (!result.ok) expect.unreachable()
+    const written = readLock()
+    expect(written.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    // Derived from verified content: this skill-only facet declares no server.
+    expect(written.facets.planner?.servers).toEqual([])
+    expect(written.facets.cowsay).toBeUndefined()
+  })
+
+  test.each([0.2, 0.3] as const)('removing the last facet of a %p lockfile needs no content', async (version) => {
+    await installFacet('cowsay', '0.1.1')
+    downgradeLockfile(version)
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    if (!result.ok) expect.unreachable()
+    expect(readLock()).toEqual({ lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} })
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
   })
 
   // The state a concurrent removal leaves behind. Routing on how many

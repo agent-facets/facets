@@ -3,6 +3,7 @@ import type { AssetType, FileState, NonEmptyArray, Scope, ValidationError } from
 import type {
   CollisionGroup,
   IntegrityFailure,
+  LockedServerCollisionGroup,
   MaterializationDisposition,
   McpServerFingerprint,
   ProjectAssetOverride,
@@ -64,6 +65,19 @@ export interface StaleMaterializationOverride extends MaterializationOverrideRef
 export type MaterializationCollisionGroup =
   | { kind: 'asset'; group: CollisionGroup }
   | { kind: 'mcp-server'; group: ServerCollisionGroup }
+
+/**
+ * One unresolved collision found in RECORDED state, before any content was
+ * fetched.
+ *
+ * Distinct from {@link MaterializationCollisionGroup} because a locked server
+ * claimant is known only by its fingerprint: there is no declaration to put
+ * in a `ServerCollisionGroup`, and inventing one to satisfy the type would
+ * make the report claim knowledge this run deliberately did not acquire.
+ */
+export type LockedMaterializationCollisionGroup =
+  | { kind: 'asset'; group: CollisionGroup }
+  | { kind: 'mcp-server'; group: LockedServerCollisionGroup }
 
 declare const EFFECTIVE_NAME: unique symbol
 
@@ -378,6 +392,18 @@ export type LockfileDriftEntry =
       locked: MaterializationDisposition
     }
   /**
+   * The same disagreement for a server a `0.4` lockfile records. Its own arm
+   * rather than the asset one with a widened type: a server has no asset
+   * type, and naming one would describe something that does not exist.
+   */
+  | {
+      name: string
+      reason: 'server-materialization-drift'
+      authoredName: string
+      manifest: MaterializationDisposition
+      locked: MaterializationDisposition
+    }
+  /**
    * An override names an asset or server the locked content does not contain.
    * A normal install prunes it inside its transaction; frozen mode writes
    * nothing, so it can only report it.
@@ -639,6 +665,20 @@ export type RunInstallFailure =
       staleOverrides: ReadonlyArray<StaleMaterializationOverride>
     }
   /**
+   * Frozen mode found the RECORDED contribution set colliding under the
+   * manifest's intent, before fetching any content.
+   *
+   * Metadata only: asset claimants come from locked entries and server
+   * claimants from locked fingerprints, so no declaration exists to show.
+   * Every group from both identity spaces, with the stale diagnostics, for
+   * the same reason as {@link MATERIALIZATION_COLLISION}.
+   */
+  | {
+      code: 'LOCKED_MATERIALIZATION_COLLISION'
+      groups: ReadonlyArray<LockedMaterializationCollisionGroup>
+      staleOverrides: ReadonlyArray<StaleMaterializationOverride>
+    }
+  /**
    * An interactive resolver returned choices that still do not compose. The
    * resolver is not reopened automatically; the operation fails with what
    * the final validation found.
@@ -785,7 +825,24 @@ export type RunInstallResult =
       ok: false
       failure: RunInstallFailure
       rollback: RollbackOutcome
+      /**
+       * Present when this run was a removal that could not be answered from
+       * local state because the lockfile predates server inventory, and the
+       * ordinary resolution it fell back to then failed. `failure` is still
+       * the actual cause; this only says why resolution was needed at all.
+       */
+      removalMigration?: RemovalMigrationContext
     }
+
+/**
+ * Why a removal had to resolve its remaining facets: they are locked under a
+ * format with no server inventory, and only verified content can supply one.
+ */
+export interface RemovalMigrationContext {
+  reason: 'remaining-server-inventory-unavailable'
+  lockfileVersion: number
+  requiredVersion: number
+}
 
 // ---------------------------------------------------------------------------
 // Install delta — the plan phase's output, the commit phase's input

@@ -137,3 +137,69 @@ describe('formatInstallFailureDetail — server inventory reconciliation', () =>
     expect(detail).not.toContain('\nforged')
   })
 })
+
+describe('formatInstallFailureDetail — frozen checks over locked metadata', () => {
+  const notNeeded: RollbackOutcome = { kind: 'not-needed', reason: 'post-lock-no-mutation' }
+  const FP_A = `sha256:${'a'.repeat(64)}` as const
+  const FP_B = `sha256:${'b'.repeat(64)}` as const
+
+  const collision: RunInstallFailure = {
+    code: 'LOCKED_MATERIALIZATION_COLLISION',
+    groups: [
+      {
+        kind: 'mcp-server',
+        group: {
+          effectiveName: 'filesystem',
+          members: [
+            {
+              facet: 'alpha',
+              authoredName: 'filesystem',
+              effectiveName: 'filesystem',
+              fingerprint: FP_A,
+              disposition: { kind: 'authored' },
+            },
+            {
+              facet: 'beta',
+              authoredName: 'filesystem',
+              effectiveName: 'filesystem',
+              fingerprint: FP_B,
+              disposition: { kind: 'authored' },
+            },
+          ],
+        },
+      },
+    ],
+    staleOverrides: [
+      { facet: 'alpha', contribution: { kind: 'mcp-server' }, authoredName: 'gone', disposition: { kind: 'omitted' } },
+    ],
+  }
+
+  test('lists every claimant with its full locked fingerprint and the stale intent', () => {
+    const detail = formatInstallFailureDetail(collision, notNeeded)
+
+    expect(detail).toContain('before fetching anything')
+    expect(detail).toContain('MCP servers — "filesystem" is claimed by:')
+    expect(detail).toContain(`locked fingerprint ${FP_A}`)
+    expect(detail).toContain(`locked fingerprint ${FP_B}`)
+    expect(detail).toContain('at facets["beta"].materialization.servers["filesystem"]')
+    expect(detail).toContain('server "gone"')
+    expect(detail).toContain('were NOT changed')
+  })
+
+  test('offers no snippet to paste, because frozen mode would refuse it', () => {
+    const detail = formatInstallFailureDetail(collision, notNeeded)
+    expect(detail).not.toContain('"kind": "aliased"')
+    expect(detail).toContain('make them in a normal install')
+  })
+
+  test('a removal migration note precedes the actual failure detail', () => {
+    const detail = formatInstallFailureDetail(collision, notNeeded, {
+      reason: 'remaining-server-inventory-unavailable',
+      lockfileVersion: 0.2,
+      requiredVersion: 0.4,
+    })
+
+    expect(detail.startsWith('facets.lock v0.2 records no MCP server inventory')).toBe(true)
+    expect(detail).toContain(`locked fingerprint ${FP_A}`)
+  })
+})

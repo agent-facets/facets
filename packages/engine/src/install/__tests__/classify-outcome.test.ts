@@ -27,6 +27,7 @@ const entry = (
       files: [{ path: 'skills/planning/SKILL.md', integrity: HASH }],
     },
   ],
+  servers: [],
 })
 
 /** A `0.2` entry: per-file records, but no disposition field. */
