@@ -4,8 +4,12 @@ import {
   CurrentLockfileSchema,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   Lockfile02Schema,
   Lockfile03Schema,
+  Lockfile04Schema,
+  type Lockfile04ServerEntry,
+  type McpServerFingerprint,
   parseLockfileDocument,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '@agent-facets/protocol'
@@ -76,7 +80,8 @@ describe('lockfile version constants', () => {
   test('constants are pinned and every readable version is supported', () => {
     expect(LOCKFILE_VERSION_0_2).toBe(0.2)
     expect(LOCKFILE_VERSION_0_3).toBe(0.3)
-    expect(SUPPORTED_LOCKFILE_VERSIONS).toEqual([0.2, 0.3])
+    expect(LOCKFILE_VERSION_0_4).toBe(0.4)
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toEqual([0.2, 0.3, 0.4])
   })
 
   // The withdrawn alpha `1` sorts ABOVE both supported versions while naming
@@ -87,6 +92,7 @@ describe('lockfile version constants', () => {
     expect(SUPPORTED_LOCKFILE_VERSIONS).not.toContain(1)
     expect(LOCKFILE_VERSION_0_2 < 1).toBe(true)
     expect(LOCKFILE_VERSION_0_3 < 1).toBe(true)
+    expect(LOCKFILE_VERSION_0_4 < 1).toBe(true)
   })
 
   // A normal install writes the current schema. Readers stay broader so
@@ -194,7 +200,7 @@ describe('parseLockfileDocument — exact version dispatch', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'unsupported-lockfile-version') expect.unreachable()
     expect(result.failure.observed).toBe(1)
-    expect(result.failure.supported).toEqual([0.2, 0.3])
+    expect(result.failure.supported).toEqual([0.2, 0.3, 0.4])
   })
 
   test('parses a 0.2 document', () => {
@@ -226,7 +232,7 @@ describe('parseLockfileDocument — exact version dispatch', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'unsupported-lockfile-version') expect.unreachable()
     expect(result.failure.observed).toBe(3)
-    expect(result.failure.supported).toEqual([0.2, 0.3])
+    expect(result.failure.supported).toEqual([0.2, 0.3, 0.4])
   })
 
   test('duplicate JSON members are rejected before schema validation', () => {
@@ -395,6 +401,7 @@ describe('lockfile file records must belong to their asset', () => {
           version: '1.0.0',
           integrity: HASH,
           assets,
+          ...(version === LOCKFILE_VERSION_0_4 ? { servers: [] } : {}),
         },
       },
     }
@@ -402,15 +409,20 @@ describe('lockfile file records must belong to their asset', () => {
 
   /** The same asset shaped for whichever version is under test. */
   function assetFor(version: number, asset: Record<string, unknown>): Record<string, unknown> {
-    return version === LOCKFILE_VERSION_0_3 ? { ...asset, materialization: { kind: 'authored' } } : asset
+    return version === LOCKFILE_VERSION_0_2 ? asset : { ...asset, materialization: { kind: 'authored' } }
   }
 
   function validate(version: number, asset: Record<string, unknown>): unknown {
-    const schema = version === LOCKFILE_VERSION_0_3 ? Lockfile03Schema : Lockfile02Schema
+    const schema =
+      version === LOCKFILE_VERSION_0_4
+        ? Lockfile04Schema
+        : version === LOCKFILE_VERSION_0_3
+          ? Lockfile03Schema
+          : Lockfile02Schema
     return schema(wrap(version, [assetFor(version, asset)]))
   }
 
-  const VERSIONS = [LOCKFILE_VERSION_0_2, LOCKFILE_VERSION_0_3]
+  const VERSIONS = [LOCKFILE_VERSION_0_2, LOCKFILE_VERSION_0_3, LOCKFILE_VERSION_0_4]
 
   test.each(VERSIONS)('accepts canonical records for every asset type (%p)', (version) => {
     expect(
@@ -533,5 +545,174 @@ describe('lockfile file records must belong to their asset', () => {
         ]),
       ),
     ).toBeInstanceOf(type.errors)
+  })
+})
+
+// --- Lockfile 0.4: required per-facet server inventory ---
+
+const FP_A = `sha256:${'a'.repeat(64)}`
+const FP_C = `sha256:${'c'.repeat(64)}`
+
+function server(name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { name, fingerprint: FP_A, materialization: { kind: 'authored' }, ...extra }
+}
+
+function lockfile04(servers: unknown, assets: unknown[] = []): Record<string, unknown> {
+  return {
+    lockfileVersion: 0.4,
+    facets: {
+      cowsay: {
+        source: { kind: 'registry', registry: 'https://cafe.example' },
+        version: '1.0.0',
+        integrity: HASH,
+        assets,
+        servers,
+      },
+    },
+  }
+}
+
+function schemaErrorPaths(value: unknown): string[] {
+  const result = Lockfile04Schema(value)
+  if (!(result instanceof type.errors)) expect.unreachable()
+  return [...result].map((error) => error.path.join('.'))
+}
+
+describe('Lockfile04Schema', () => {
+  // Compile-time: a validated record's fingerprint is the branded spelling,
+  // not a bare string, so it can be handed to the planner without a cast.
+  type Assert<T extends true> = T
+  type _FingerprintIsBranded = Assert<Lockfile04ServerEntry['fingerprint'] extends McpServerFingerprint ? true : false>
+
+  test('accepts an explicitly empty server inventory', () => {
+    expect(Lockfile04Schema(lockfile04([]))).not.toBeInstanceOf(type.errors)
+  })
+
+  test('accepts a server-only facet with an empty assets array', () => {
+    expect(Lockfile04Schema(lockfile04([server('filesystem')]))).not.toBeInstanceOf(type.errors)
+  })
+
+  test('a missing inventory is rejected rather than read as empty', () => {
+    const document = lockfile04([])
+    delete (document.facets as { cowsay: Record<string, unknown> }).cowsay.servers
+    expect(schemaErrorPaths(document)).toContain('facets.cowsay.servers')
+  })
+
+  test('accepts each disposition arm, keeping the authored name and fingerprint', () => {
+    const result = Lockfile04Schema(
+      lockfile04([
+        server('a'),
+        server('b', { materialization: { kind: 'aliased', as: 'project-b' } }),
+        server('c', { materialization: { kind: 'omitted' } }),
+      ]),
+    )
+    if (result instanceof type.errors) expect.unreachable()
+    expect(result.facets.cowsay?.servers.map((s) => [s.name, s.fingerprint, s.materialization])).toEqual([
+      ['a', FP_A, { kind: 'authored' }],
+      ['b', FP_A, { kind: 'aliased', as: 'project-b' }],
+      ['c', FP_A, { kind: 'omitted' }],
+    ])
+  })
+
+  test('rejects unsorted records', () => {
+    expect(schemaErrorPaths(lockfile04([server('b'), server('a')]))).toContain('facets.cowsay.servers')
+  })
+
+  test('rejects duplicate authored names', () => {
+    expect(schemaErrorPaths(lockfile04([server('a'), server('a', { fingerprint: FP_C })]))).toContain(
+      'facets.cowsay.servers',
+    )
+  })
+
+  test('orders by code units, not locale', () => {
+    // Digits sort before letters in code-unit order.
+    expect(Lockfile04Schema(lockfile04([server('2fa'), server('alpha')]))).not.toBeInstanceOf(type.errors)
+  })
+
+  test('rejects an authored name outside the server grammar', () => {
+    for (const name of ['Bad', 'a_b', 'a/b', '-a', '']) {
+      expect(schemaErrorPaths(lockfile04([server(name)]))).toContain('facets.cowsay.servers.0.name')
+    }
+  })
+
+  test('rejects a malformed fingerprint', () => {
+    for (const fingerprint of [
+      `sha256:${'A'.repeat(64)}`,
+      `sha256:${'a'.repeat(63)}`,
+      `md5:${'a'.repeat(64)}`,
+      `sha256:${'a'.repeat(64)}\n`,
+    ]) {
+      expect(schemaErrorPaths(lockfile04([server('a', { fingerprint })]))).toContain(
+        'facets.cowsay.servers.0.fingerprint',
+      )
+    }
+  })
+
+  test('rejects a missing or invalid disposition', () => {
+    const { materialization: _, ...withoutDisposition } = server('a')
+    expect(Lockfile04Schema(lockfile04([withoutDisposition]))).toBeInstanceOf(type.errors)
+    expect(Lockfile04Schema(lockfile04([server('a', { materialization: { kind: 'aliased' } })]))).toBeInstanceOf(
+      type.errors,
+    )
+    expect(
+      Lockfile04Schema(lockfile04([server('a', { materialization: { kind: 'aliased', as: 'Bad_Name' } })])),
+    ).toBeInstanceOf(type.errors)
+    expect(
+      Lockfile04Schema(lockfile04([server('a', { materialization: { kind: 'omitted', as: 'x' } })])),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  test('a declaration-shaped member is tolerated as an opaque extension', () => {
+    const result = Lockfile04Schema(lockfile04([server('a', { command: 'npx', env: { TOKEN: 'x' } })]))
+    if (result instanceof type.errors) expect.unreachable()
+    expect((result.facets.cowsay?.servers[0] as Record<string, unknown>).command).toBe('npx')
+  })
+
+  test('0.4 asset entries keep the 0.3 shape and rules', () => {
+    expect(Lockfile04Schema(lockfile04([], [skill03Asset]))).not.toBeInstanceOf(type.errors)
+    expect(Lockfile04Schema(lockfile04([], [skill02Asset]))).toBeInstanceOf(type.errors)
+  })
+
+  test('each exact schema rejects the other versions by pin', () => {
+    expect(Lockfile04Schema({ ...lockfile04([]), lockfileVersion: 0.3 })).toBeInstanceOf(type.errors)
+    expect(Lockfile03Schema(lockfile04([]))).toBeInstanceOf(type.errors)
+    expect(Lockfile02Schema(lockfile04([]))).toBeInstanceOf(type.errors)
+  })
+})
+
+describe('parseLockfileDocument — 0.4 dispatch', () => {
+  test('parses a 0.4 document and exposes its server inventory', () => {
+    const result = parseLockfileDocument(JSON.stringify(lockfile04([server('filesystem')])))
+    if (!result.ok) expect.unreachable()
+    if (result.data.lockfileVersion !== LOCKFILE_VERSION_0_4) expect.unreachable()
+    expect(result.data.lockfile.facets.cowsay?.servers[0]?.name).toBe('filesystem')
+  })
+
+  test('a malformed 0.4 document fails as 0.4 and is never retried as 0.3', () => {
+    // A perfectly valid 0.3 body claiming 0.4: no inventory, so it is a 0.4
+    // violation rather than a 0.3 document.
+    const result = parseLockfileDocument(JSON.stringify({ ...lockfile03, lockfileVersion: 0.4 }))
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'schema-violation') expect.unreachable()
+    expect(result.failure.lockfileVersion).toBe(LOCKFILE_VERSION_0_4)
+  })
+
+  test('a 0.4 shape claiming 0.3 is read only under 0.3 rules', () => {
+    // 0.3 tolerates unknown keys, so `servers` rides along as an extension;
+    // the document is a 0.3 lockfile and carries no server inventory.
+    const result = parseLockfileDocument(JSON.stringify({ ...lockfile04([server('a')]), lockfileVersion: 0.3 }))
+    if (!result.ok) expect.unreachable()
+    expect(result.data.lockfileVersion).toBe(LOCKFILE_VERSION_0_3)
+  })
+
+  test('a 0.4 shape claiming 1 is rejected rather than downgraded', () => {
+    const result = parseLockfileDocument(JSON.stringify({ ...lockfile04([]), lockfileVersion: 1 }))
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('unsupported-lockfile-version')
+  })
+
+  test('adding a 0.4 reader does not change the version a normal install writes', () => {
+    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_3)
+    expect(CurrentLockfileSchema(lockfile04([]))).toBeInstanceOf(type.errors)
   })
 })

@@ -1,8 +1,11 @@
 import { type AssetType, validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
 import { canonicalPrimaryPath, skillRootPath } from '../materialization/identity.ts'
+import { isMcpServerFingerprint, type McpServerFingerprint } from '../mcp/fingerprint.ts'
+import { compareCodeUnits } from '../ordering.ts'
 import { isSafeVersionComponent } from '../sources/version-spec.ts'
 import { MaterializationDispositionSchema } from './materialization.ts'
+import { validateMcpServerName } from './mcp-server.ts'
 
 /*
  * Numeric `1` is deliberately absent from this module.
@@ -29,6 +32,14 @@ export const LOCKFILE_VERSION_0_2 = 0.2
  * names, canonical paths, and integrity values are unchanged from `0.2`.
  */
 export const LOCKFILE_VERSION_0_3 = 0.3
+
+/**
+ * The `0.4` lockfile schema: the `0.3` asset shape plus a REQUIRED per-facet
+ * `servers` inventory recording every authored MCP server's name, canonical
+ * declaration fingerprint, and materialization disposition. Fingerprints are
+ * bound to {@link LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING}.
+ */
+export const LOCKFILE_VERSION_0_4 = 0.4
 
 /**
  * The version a normal install WRITES. Distinct constant from
@@ -61,9 +72,13 @@ export const LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING = 'facets:mcp-server:v1'
 
 /**
  * Every lockfile schema version this implementation can READ. Broader than
- * what it writes: `0.3` is readable as soon as its schema exists.
+ * what it writes: a version is readable as soon as its schema exists.
  */
-export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [LOCKFILE_VERSION_0_2, LOCKFILE_VERSION_0_3]
+export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
+]
 
 /**
  * A locked facet version. Always written by the install pipeline as
@@ -272,6 +287,56 @@ const Lockfile03Asset = type({
   return error === undefined ? true : ctx.mustBe(error)
 })
 
+// --- Server inventory shape (0.4) ---
+
+/**
+ * A server's canonical declaration fingerprint, in exactly the spelling the
+ * encoder emits. Narrowed with the encoder's own guard so the accepted and
+ * emitted spellings cannot drift.
+ */
+const LockedServerFingerprint = type('string').narrow(
+  (value, ctx): value is McpServerFingerprint =>
+    isMcpServerFingerprint(value) || ctx.mustBe('a "sha256:" fingerprint with 64 lowercase hexadecimal digits'),
+)
+
+/**
+ * One authored MCP server in a `0.4` facet entry.
+ *
+ * `name` is the AUTHORED name and `fingerprint` the canonical semantic
+ * fingerprint of the verified declaration; an alias appears only in the
+ * disposition and changes neither. The enclosing facet entry supplies every
+ * provenance field, so none is duplicated here. Declaration values are never
+ * part of the schema — unrecognized members are tolerated as opaque
+ * extensions under the general rule, and no reader treats them as content.
+ */
+const Lockfile04Server = type({
+  name: type('string').narrow((value, ctx) => {
+    const check = validateMcpServerName(value)
+    return check.ok ? true : ctx.mustBe(`an authored server name that ${check.reason}`)
+  }),
+  fingerprint: LockedServerFingerprint,
+  materialization: MaterializationDispositionSchema,
+})
+
+/**
+ * A facet's complete authored server inventory: REQUIRED (an empty array is
+ * the positive statement that the facet declares no servers) and strictly
+ * ascending by authored name under the shared code-unit comparator, which
+ * also forbids duplicates.
+ */
+const Lockfile04ServerInventory = Lockfile04Server.array().narrow((servers, ctx) => {
+  for (let i = 1; i < servers.length; i++) {
+    const previous = (servers[i - 1] as { name: string }).name
+    const current = (servers[i] as { name: string }).name
+    if (compareCodeUnits(previous, current) >= 0) {
+      return ctx.mustBe(
+        `server records strictly sorted by authored name: "${current}" must sort after "${previous}" with no duplicates`,
+      )
+    }
+  }
+  return true
+})
+
 const Lockfile02FacetEntry = type({
   source: LockfileSource,
   version: LockedVersion,
@@ -284,6 +349,15 @@ const Lockfile03FacetEntry = type({
   version: LockedVersion,
   integrity: 'string',
   assets: Lockfile03Asset.array(),
+})
+
+/** A `0.4` facet entry: the `0.3` entry plus its complete server inventory. */
+const Lockfile04FacetEntry = type({
+  source: LockfileSource,
+  version: LockedVersion,
+  integrity: 'string',
+  assets: Lockfile03Asset.array(),
+  servers: Lockfile04ServerInventory,
 })
 
 // --- Versioned lockfile schemas (exact version dispatch, design D10) ---
@@ -325,6 +399,27 @@ export type Lockfile03Facet = typeof Lockfile03FacetEntry.infer
 
 /** Inferred type for a `0.3` asset entry with its materialization disposition */
 export type Lockfile03AssetEntry = typeof Lockfile03Asset.infer
+
+/**
+ * `0.4` lockfile schema: exact numeric `lockfileVersion: 0.4`, the `0.3`
+ * asset entries unchanged, and a required server inventory on every facet.
+ */
+export const Lockfile04Schema = type({
+  lockfileVersion: type.unit(LOCKFILE_VERSION_0_4),
+  facets: type.Record('string', Lockfile04FacetEntry),
+})
+
+/** Inferred TypeScript type for a validated `0.4` lockfile */
+export type Lockfile04 = typeof Lockfile04Schema.infer
+
+/** Inferred type for a facet entry inside a `0.4` lockfile */
+export type Lockfile04Facet = typeof Lockfile04FacetEntry.infer
+
+/** Inferred type for a `0.4` asset entry (the `0.3` shape) */
+export type Lockfile04AssetEntry = Lockfile04Facet['assets'][number]
+
+/** Inferred type for one authored server record inside a `0.4` facet entry */
+export type Lockfile04ServerEntry = typeof Lockfile04Server.infer
 
 /**
  * The schema a normal install WRITES, tracking

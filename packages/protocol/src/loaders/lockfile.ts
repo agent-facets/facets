@@ -6,10 +6,13 @@ import {
   type CurrentLockfileFacet,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   type Lockfile02,
   Lockfile02Schema,
   type Lockfile03,
   Lockfile03Schema,
+  type Lockfile04,
+  Lockfile04Schema,
   type LockfileFileRecord,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '../schemas/lockfile.ts'
@@ -38,6 +41,7 @@ export type LockfileParseFailure =
 export type ParsedLockfile =
   | { lockfileVersion: typeof LOCKFILE_VERSION_0_2; lockfile: Lockfile02 }
   | { lockfileVersion: typeof LOCKFILE_VERSION_0_3; lockfile: Lockfile03 }
+  | { lockfileVersion: typeof LOCKFILE_VERSION_0_4; lockfile: Lockfile04 }
 
 /**
  * The exact set of lockfile versions this implementation can READ. Derived
@@ -74,8 +78,8 @@ export type ParseLockfileResult = { ok: true; data: ParsedLockfile } | { ok: fal
  *   1. JSON parse (syntax errors are structured failures).
  *   2. Reject duplicate object member names before schema validation.
  *   3. Dispatch on `lockfileVersion` by EXACT equality, never numeric
- *      ordering — `0.2` selects only the `0.2` schema, `0.3` selects only
- *      the `0.3` schema, and anything else is a structured
+ *      ordering — `0.2`, `0.3`, and `0.4` each select only their own
+ *      schema, and anything else is a structured
  *      unsupported-version failure carrying the observed and supported
  *      versions.
  *
@@ -89,8 +93,8 @@ export type ParseLockfileResult = { ok: true; data: ParsedLockfile } | { ok: fal
  * a withdrawn alpha document is never resurrected by shape.
  *
  * There is NO fallback or shape-sniffing between versions: a malformed
- * `0.3` lockfile fails as a `0.3` schema violation and is never
- * reinterpreted as `0.2`.
+ * `0.4` lockfile fails as a `0.4` schema violation and is never
+ * reinterpreted as `0.3` or `0.2`.
  */
 export function parseLockfileDocument(bytes: Uint8Array | string): ParseLockfileResult {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes)
@@ -138,6 +142,21 @@ export function parseLockfileDocument(bytes: Uint8Array | string): ParseLockfile
       }
     }
     return { ok: true, data: { lockfileVersion: LOCKFILE_VERSION_0_3, lockfile: validated } }
+  }
+
+  if (observedVersion === LOCKFILE_VERSION_0_4) {
+    const validated = Lockfile04Schema(jsonResult.data)
+    if (validated instanceof type.errors) {
+      return {
+        ok: false,
+        failure: {
+          code: 'schema-violation',
+          lockfileVersion: LOCKFILE_VERSION_0_4,
+          errors: mapArkErrors(validated),
+        },
+      }
+    }
+    return { ok: true, data: { lockfileVersion: LOCKFILE_VERSION_0_4, lockfile: validated } }
   }
 
   return {

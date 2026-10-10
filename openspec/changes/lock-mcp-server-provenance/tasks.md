@@ -72,50 +72,50 @@ Run `bun run --cwd packages/protocol test`, `bun run --cwd packages/protocol typ
 ## 3. Lockfile reader and inventory API — Research
 
 ### Step 9 - Pause: Switch model for exploration
-- [ ] 3.1 Pause: Switch model for exploration
+- [x] 3.1 Pause: Switch model for exploration
 
 ### Step 10 - Explore: Audit exact-reader contracts
-- [ ] 3.2 Explore: Audit exact-reader contracts
+- [x] 3.2 Explore: Audit exact-reader contracts
 
 Inspect protocol `schemas/lockfile.ts`, `loaders/lockfile.ts`, `index.ts`, `lockfile-versions.test.ts`, and `duplicate-json-members.test.ts`. Identify exhaustive read-side consumers affected by adding `0.4`, without changing current-writer aliases.
 
 ### Step 11 - Explore: Map public inventory result coverage
-- [ ] 3.3 Explore: Map public inventory result coverage
+- [x] 3.3 Explore: Map public inventory result coverage
 
 Map D3's authored/selected results, provenance copies, legacy unavailability, collisions, and recorded-disposition translation to existing protocol planner fixtures.
 
 ### Step 12 - Propose: Agree the reader-only boundary
-- [ ] 3.4 Propose: Agree the reader-only boundary
+- [x] 3.4 Propose: Agree the reader-only boundary
 
 Present the schema, exact-reader, derivation, public-type, and test changes for group 4. Keep the writer at `0.3`; defer write-side extension merging and constructor changes to group 8. Obtain approval.
 
 ### Step 13 - Pause: Switch model for implementation
-- [ ] 3.5 Pause: Switch model for implementation
+- [x] 3.5 Pause: Switch model for implementation
 
 ## 4. Lockfile reader and inventory API — Implementation
 
 ### Step 14 - Implement: Add the exact 0.4 schema and reader
-- [ ] 4.1 Implement: Add the exact 0.4 schema and reader
+- [x] 4.1 Implement: Add the exact 0.4 schema and reader
 
 Add explicit `0.4` schema/types, required sorted server records, exact parser dispatch, supported-reader membership, and public exports. Retain `0.2`/`0.3` readers and current `0.3` writer aliases. Update necessary exhaustive read-side consumers without temporary public compatibility shapes or unchecked casts.
 
 ### Step 15 - Implement: Derive public locked MCP inventory
-- [ ] 4.2 Implement: Derive public locked MCP inventory
+- [x] 4.2 Implement: Derive public locked MCP inventory
 
 Implement `deriveLockedMcpInventory` using the fingerprint-only planner and recorded dispositions. Return copied readonly authored and selected provenance, every distinct origin, authored evidence on collision without partial selection, and explicit legacy unavailability. Do not accept manifest overrides or expose opaque extensions.
 
 ### Step 16 - Implement: Test exact schemas and duplicate JSON members
-- [ ] 4.3 Implement: Test exact schemas and duplicate JSON members
+- [x] 4.3 Implement: Test exact schemas and duplicate JSON members
 
 Extend `lockfile-versions.test.ts` and `duplicate-json-members.test.ts`: required empty arrays; missing, invalid, duplicate, and unsorted records; exact dispatch without fallback; unchanged asset shapes; opaque `command` extensions; and duplicate JSON members inside server records rejected before schema validation.
 
 ### Step 17 - Implement: Test public inventory boundaries
-- [ ] 4.4 Implement: Test public inventory boundaries
+- [x] 4.4 Implement: Test public inventory boundaries
 
 Cover server-only/mixed/all-omitted cases, alias provenance, every origin including two authored names from one facet, conflicts with unrelated clean servers but no partial selection, distinct identities sharing fingerprints, empty current success versus legacy unavailability, legacy lookalikes, replaced fingerprints reported without verification, manifest independence, deterministic ordering, and input/output isolation.
 
 ### Step 18 - Verify: Check the reader-only boundary
-- [ ] 4.5 Verify: Check the reader-only boundary
+- [x] 4.5 Verify: Check the reader-only boundary
 
 Run protocol unit tests and types, engine and CLI typechecks, and lint. Confirm current `0.3` writing remains functional. Stop on failure; this checkpoint does not authorize releasing partial CLI support.
 
