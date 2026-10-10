@@ -41,8 +41,16 @@ import type { ReadonlyMcpServerDeclaration } from '../schemas/mcp-server-declara
  * an existing stored fingerprint meant.
  */
 
-/** Preimage tag. Bump only when the canonical encoding itself changes. */
-const FINGERPRINT_ENCODING_TAG = 'facets:mcp-server:v1'
+/**
+ * Preimage tag identifying the canonical encoding this encoder emits. Bump
+ * only when the canonical encoding itself changes.
+ *
+ * Artifacts that persist fingerprints pin the encoding they were written
+ * under with their own literal (for example the `0.4` lockfile binding)
+ * rather than aliasing this constant, so a future encoder revision cannot
+ * silently redefine what an already-written fingerprint meant.
+ */
+export const MCP_SERVER_FINGERPRINT_ENCODING = 'facets:mcp-server:v1'
 
 /** A declaration fingerprint, in the repository-wide `sha256:<hex>` form. */
 export type McpServerFingerprint = `sha256:${string}`
@@ -72,10 +80,10 @@ export function canonicalMcpServerEncoding(declaration: ReadonlyMcpServerDeclara
     case 'stdio': {
       const args = declaration.args ?? []
       const env = Object.entries(declaration.env ?? {}).sort(([a], [b]) => compareCodeUnits(a, b))
-      return JSON.stringify([FINGERPRINT_ENCODING_TAG, 'stdio', declaration.command, args, env])
+      return JSON.stringify([MCP_SERVER_FINGERPRINT_ENCODING, 'stdio', declaration.command, args, env])
     }
     case 'http':
-      return JSON.stringify([FINGERPRINT_ENCODING_TAG, 'http', declaration.url])
+      return JSON.stringify([MCP_SERVER_FINGERPRINT_ENCODING, 'http', declaration.url])
   }
 }
 

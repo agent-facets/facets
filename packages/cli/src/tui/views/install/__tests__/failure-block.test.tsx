@@ -145,3 +145,62 @@ describe('FailureBlock — local authentication errors', () => {
     expect(text).not.toContain(secret)
   })
 })
+
+describe('FailureBlock — server inventory reconciliation', () => {
+  const FP_LOCKED = `sha256:${'1'.repeat(64)}` as const
+  const FP_VERIFIED = `sha256:${'2'.repeat(64)}` as const
+
+  function frame(failure: Extract<RunInstallResult, { ok: false }>['failure']): string {
+    const result = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+    } satisfies Extract<RunInstallResult, { ok: false }>
+    const instance = render(createElement(FailureBlock, { result }))
+    const text = visibleTerminalText(instance.lastFrame() ?? '')
+    instance.unmount()
+    return text
+  }
+
+  test('a name-set mismatch names the facet and both directions', () => {
+    const text = frame({ code: 'RECONCILE_SERVER_IDENTITY', facet: 'alpha', missing: ['gone'], unexpected: ['extra'] })
+    expect(text).toContain('different MCP server set')
+    expect(text).toContain('"alpha"')
+    expect(text).toContain('locked but not declared: "gone"')
+    expect(text).toContain('declared but not locked: "extra"')
+  })
+
+  test('a fingerprint mismatch names the server and both fingerprints', () => {
+    const text = frame({
+      code: 'RECONCILE_SERVER_FINGERPRINT',
+      facet: 'alpha',
+      authoredName: 'filesystem',
+      expected: FP_LOCKED,
+      actual: FP_VERIFIED,
+    })
+    expect(text).toContain('"filesystem"')
+    expect(text).toContain(`locked: "${FP_LOCKED}"`)
+    expect(text).toContain(`verified: "${FP_VERIFIED}"`)
+  })
+
+  test('guidance points at the lockfile, not at a retry or a deletion', () => {
+    const text = frame({ code: 'RECONCILE_SERVER_IDENTITY', facet: 'alpha', missing: ['gone'], unexpected: [] })
+    expect(text).toContain('trusted revision')
+    expect(text).not.toContain('Delete facets.lock')
+    expect(text).toContain('Nothing was written')
+  })
+
+  test('a hostile name cannot add a line or reach the terminal', () => {
+    const clean = frame({ code: 'RECONCILE_SERVER_IDENTITY', facet: 'alpha', missing: ['gone'], unexpected: [] })
+    const hostile = frame({
+      code: 'RECONCILE_SERVER_IDENTITY',
+      facet: 'alpha\u001b[2K\nforged',
+      missing: ['gone\nforged line'],
+      unexpected: [],
+    })
+    expect(hostile).not.toContain('\u001b[2K')
+    expect(hostile).toContain('\\u001b[2K\\nforged')
+    expect(hostile).toContain('"gone\\nforged line"')
+    expect(hostile.split('\n')).toHaveLength(clean.split('\n').length)
+  })
+})
