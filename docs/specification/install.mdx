@@ -123,6 +123,7 @@ A removal-only operation MAY rewrite the lockfile without resolving the facets t
 
 - Every remaining facet has a `0.4` entry matching its manifest source and specifier, and its recorded asset and server dispositions equal manifest intent with no collision.
 - The machine-local ownership record covers every remaining facet and agrees with its entry: versions, integrity, materialized assets, and every active server record by authored name, disposition, and fingerprint, in both directions. An omitted server needs no ownership record.
+- No identity a remaining facet keeps was also claimed by another facet. For a text asset, any other recorded claimant counts, compared by namespace and portably folded name. For a server, recorded claims at that identity with different fingerprints count; identical fingerprints may be shared. Otherwise the bytes on disk may be another claimant's, and only resolution can restore the kept content.
 
 Otherwise the removal MUST fall back to ordinary resolution of the remaining facets, with the usual verification and approval. In particular, a `0.2` or `0.3` lockfile with any remaining facet always falls back, because no complete inventory exists to carry forward. It MUST NOT invent an inventory or write a legacy version. A failed fallback MUST commit nothing and MUST report both why resolution was needed and the underlying failure.
 

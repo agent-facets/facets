@@ -56,7 +56,7 @@ Errors that several commands can produce, with their cause and fix. An error onl
   <Accordion title="server metadata disagrees with the facet">
     **Cause:** a facet resolved to the integrity `facets.lock` pins, but the [server inventory](/specification/lockfile#server-inventory) recorded for it does not match what it declares. The message names the facet and either the server names that differ or the locked and verified fingerprints. The code is `RECONCILE_SERVER_IDENTITY` or `RECONCILE_SERVER_FINGERPRINT`. Any of `install`, `add`, `update`, and a `remove` that resolves its remaining facets can report it, and nothing was written.
 
-    **Fix:** the lockfile was damaged, usually by a hand edit or a bad merge. Restore the facet's `servers` records from a trusted revision of the project, for example with `git checkout <revision> -- facets.lock`, then re-run. Re-running alone fails the same way: an install never regenerates these records over a mismatch.
+    **Fix:** the lockfile was damaged, usually by a hand edit or a bad merge. Restore only the named facet's `servers` records, copied from a trusted revision whose entry for that facet has the same `version` and `integrity`, then re-run. Do not restore the whole `facets.lock` on its own: that rewinds every other facet's pins against the current `facets.json`. To roll the whole project back instead, restore `facets.json` and `facets.lock` together from the same revision. Re-running alone fails the same way: an install never regenerates these records over a mismatch.
   </Accordion>
 
   <Accordion title='"some files could not be returned to their previous state"'>

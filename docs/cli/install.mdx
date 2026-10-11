@@ -173,7 +173,7 @@ A plain `facet install` writes lockfile `0.4`, which records every facet's MCP s
   </Step>
 </Steps>
 
-To go back to an older CLI, restore the `facets.json` and `facets.lock` pair committed before the migration. Do not edit `lockfileVersion` or delete the lockfile: there is no downgrade writer, and a relabelled file fails validation.
+To go back to an older CLI, restore the `facets.json` and `facets.lock` pair committed before the migration. Do not edit `lockfileVersion` or delete the lockfile. There is no downgrade writer: a `0.4` file relabelled `0.2` or `0.3` may still load, but the older format silently ignores its server records, which no longer describe anything.
 
 ### Cache
 

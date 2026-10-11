@@ -375,6 +375,6 @@ Add changeset release notes for `@agent-facets/protocol` and `agent-facets` usin
 Run documentation validation, broken-link checks, `bun test scripts/lib/changesets.test.ts`, `bun check`, and strict validation of this OpenSpec change. Check edited documentation prose for forbidden em dashes/spaced double hyphens without treating literal flags or untouched historical text as violations. Audit production protocol source for new Bun, filesystem, network, or adapter dependencies. Stop on failure; formatting repairs are implementation work, not part of Verify.
 
 ### Step 70 - Review: Confirm scope and specification coverage
-- [ ] 12.10 Review: Confirm scope and specification coverage
+- [x] 12.10 Review: Confirm scope and specification coverage
 
 Review the final diff and requirement-to-test evidence against D1–D8 and both reconciled delta specs. Map every changed requirement to passing evidence or an explicit gap. Check legacy paths, metadata verification, receipt authority, version-axis isolation, Node-only operation, and release scope. Present findings and obtain feedback through the Review gate without advancing archival or release workflows.
