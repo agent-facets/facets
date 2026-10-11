@@ -11,7 +11,7 @@ facet remove <facet> [more facets...]
 
 Removes facets from `facets.json`, deletes the files and MCP server entries they still own from every connected adapter, and rewrites `facets.lock` without them. Aliased as `facet rm`. The inverse of [`facet add`](/cli/add).
 
-Ownership is decided by your machine's records, so a facet this machine never installed loses its declaration but keeps its files. Removing a name that is not declared is a safe no-op, and several removals commit together or not at all.
+Ownership is decided by your machine's records, so a facet this machine never installed loses its declaration but keeps its files. Removing a name that is not declared deletes nothing, and several removals commit together or not at all.
 
 ## Examples
 
@@ -70,6 +70,15 @@ A removal usually needs none: when your machine's records already account for ev
 
 When local state cannot answer, the removal falls back to the full install path. It then has to materialize what you are keeping before claiming it, so it succeeds when the content is reachable and fails, deleting nothing, when it is not. That fallback can also surface work a plain removal never does, such as an unresolved [collision](/cli/install#name-collisions) or [MCP approval](/cli/install#mcp-servers) for the facets you keep.
 
+#### Older lockfiles
+
+A removal always writes lockfile `0.4`, which records each kept facet's MCP servers. A `0.2` or `0.3` lockfile has no such record to carry forward, so the first removal that keeps any facet resolves and verifies those facets, even when your machine's records are complete. Expect the network, and possibly an approval prompt, that one time. Later removals can complete offline again.
+
+If that resolution fails, nothing is committed. The error says the lockfile needed migrating, followed by the actual cause, such as an unreachable registry or a missing local source.
+
+Removing every remaining facet needs no content: the removal writes an empty `0.4` lockfile without fetching anything. Either way, files and server entries are deleted only on your machine's records, never because the lockfile lists them.
+
+
 ## Troubleshooting
 
 <AccordionGroup>
@@ -85,8 +94,14 @@ When local state cannot answer, the removal falls back to the full install path.
     **Fix:** run `facet install` first to take ownership of what you are keeping, then remove again.
   </Accordion>
 
+  <Accordion title="records no MCP server inventory, so this removal had to resolve">
+    **Cause:** the lockfile is `0.2` or `0.3`, so the removal had to resolve the facets you keep to [migrate it](#older-lockfiles), and that resolution failed. The cause is printed below this line.
+
+    **Fix:** fix that cause, for example by restoring network access or a local source, then remove again. Or [migrate the lockfile](/cli/install#migrating-the-lockfile) with `facet install` first. To return to an older CLI instead, restore the committed `facets.json` and `facets.lock` pair; do not edit `lockfileVersion` or delete the lockfile.
+  </Accordion>
+
   <Accordion title="a removal asks for MCP approval">
-    **Cause:** the fallback path re-resolves the facets you keep, and their declarations need approval on this machine.
+    **Cause:** the fallback path re-resolves the facets you keep, including during an [older-lockfile migration](#older-lockfiles), and their declarations need approval on this machine.
 
     **Fix:** approve at the prompt, or pass `--accept-mcp` in CI. See [MCP servers](/cli/install#mcp-servers).
   </Accordion>

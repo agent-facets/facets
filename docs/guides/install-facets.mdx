@@ -92,11 +92,11 @@ Commit both files so teammates and CI resolve identical versions.
 
 ```json expandable facets.lock
 {
-  "lockfileVersion": 0.3,
+  "lockfileVersion": 0.4,
   "facets": {
     "cowsay": {
       "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
-      "version": "1.0.0",
+      "version": "1.4.2",
       "integrity": "sha256:70fe8f9f0ba1…",
       "assets": [
         {
@@ -110,6 +110,17 @@ Commit both files so teammates and CI resolve identical versions.
         { "scope": "project", "type": "command", "name": "cowsay",
           "materialization": { "kind": "authored" },
           "files": [{ "path": "commands/cowsay.md", "integrity": "sha256:55ee66…" }] }
+      ],
+      "servers": []
+    },
+    "viper-plans": {
+      "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
+      "version": "1.0.0",
+      "integrity": "sha256:d4e5f6a7b8c9…",
+      "assets": [],
+      "servers": [
+        { "name": "planner", "fingerprint": "sha256:9c41d0…",
+          "materialization": { "kind": "authored" } }
       ]
     }
   }
@@ -118,7 +129,9 @@ Commit both files so teammates and CI resolve identical versions.
 
 </CodeGroup>
 
-`facets.json` records what your project depends on and how you want its assets named. `facets.lock` records exact versions, <Tooltip headline="Integrity hash" tip="A content hash checked on every install, so you get exactly the bytes that were published." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and per-file records. The CLI owns the lockfile; never hand-edit it.
+`facets.json` records what your project depends on and how you want its assets named. `facets.lock` records exact versions, <Tooltip headline="Integrity hash" tip="A content hash checked on every install, so you get exactly the bytes that were published." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, per-file records, and every MCP server each facet declares, by name and fingerprint. The CLI owns the lockfile; never hand-edit it.
+
+An older `0.2` or `0.3` lockfile is migrated by your next plain `facet install`. Upgrade every CLI that shares the project first. See [Migrating the lockfile](/cli/install#migrating-the-lockfile).
 
 A third file, the machine-local install receipt, lives outside your project under [`$FACET_DIR`](/cli/env). It tracks what this machine wrote and holds your MCP approvals, which is why neither travels to teammates.
 
@@ -219,7 +232,7 @@ facet adapter list             # what is connected
 
 [`facet update`](/cli/update) shows what is installed next to the versions it could move to. Git and local facets are listed as unsupported, since only registry facets have releases to compare. To pin instead, re-add at an exact version with `facet add viper-plans@2.0.0`.
 
-[`facet remove`](/cli/remove) drops the facet from `facets.json`, deletes what it still owns, and rewrites the lockfile. Assets another declared facet still wants are kept, and removing a name that is not declared is a safe no-op.
+[`facet remove`](/cli/remove) drops the facet from `facets.json`, deletes what it still owns, and rewrites the lockfile. Assets another declared facet still wants are kept, and removing a name that is not declared deletes nothing.
 
 Connecting an adapter later hands it everything the project already owns: the next install materializes those assets into the new tool too.
 

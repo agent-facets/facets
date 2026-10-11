@@ -5,7 +5,7 @@ tag: facets.lock
 description: The facets.lock schema and entry semantics
 ---
 
-The lockfile records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it came from, and the text assets it contributed with a per-file integrity record for each.
+The lockfile records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it came from, the text assets it contributed with a per-file integrity record for each, and every MCP server it declares, identified by name and fingerprint.
 
 It is the resolution counterpart to the [project manifest](/specification/project-manifest), which records intent. Both are version-controlled.
 
@@ -15,7 +15,7 @@ The lockfile is written only by an install, as part of the [atomic write](/speci
 
 ```json expandable facets.lock
 {
-  "lockfileVersion": 0.3,
+  "lockfileVersion": 0.4,
   "facets": {
     "cowsay": {
       "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
@@ -31,7 +31,8 @@ The lockfile is written only by an install, as part of the [atomic write](/speci
             { "path": "commands/cowsay.md", "integrity": "sha256:11aa22…" }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "viper-plans": {
       "source": { "kind": "git", "url": "https://github.com/acme/viper.git", "commit": "8c1f2a9d0e4b7c65a3f1d28e9b0a4c7d6e5f3a21" },
@@ -48,22 +49,34 @@ The lockfile is written only by an install, as part of the [atomic write](/speci
             { "path": "skills/viper-planning/references/api.md", "integrity": "sha256:55ee66…" }
           ]
         }
+      ],
+      "servers": [
+        {
+          "name": "docs",
+          "fingerprint": "sha256:7f3e91…",
+          "materialization": { "kind": "omitted" }
+        },
+        {
+          "name": "filesystem",
+          "fingerprint": "sha256:9c41d0…",
+          "materialization": { "kind": "aliased", "as": "team-filesystem" }
+        }
       ]
     }
   }
 }
 ```
 
-Note what aliasing does not move: `name` is still `viper-planning` and its `files` still live under `skills/viper-planning/`. Only the destination on disk changes: the skill materializes into `skills/team-planning/`, whose primary file is still `SKILL.md`.
+Note what aliasing does not move: `name` is still `viper-planning` and its `files` still live under `skills/viper-planning/`. Only the destination on disk changes: the skill materializes into `skills/team-planning/`, whose primary file is still `SKILL.md`. The same holds for the `filesystem` server: its authored name and fingerprint stay put, and only the configuration key becomes `team-filesystem`.
 
 ## Fields
 
 <ResponseField name="lockfileVersion" type="number" required>
-  The schema version. A normal install writes `0.3`. Version `0.2` remains readable.
+  The schema version. A normal install writes `0.4`. Versions `0.2` and `0.3` remain readable.
 
-  Versions are dispatched by exact match, never by ordering. A version number names a schema, not a position in a sequence, so a loader recognizes exactly what it supports and fails on anything else. There is no cross-version fallback.
+  Versions are dispatched by exact match, never by ordering. A version number names a schema, not a position in a sequence, so a loader recognizes exactly what it supports and fails on anything else. There is no cross-version fallback: a malformed `0.4` document fails as `0.4`.
 
-  A normal install migrates a verified `0.2` lockfile to `0.3`. A [frozen install](/specification/install#frozen-lockfile) never rewrites it.
+  A normal install migrates a verified `0.2` or `0.3` lockfile to `0.4`, deriving every server inventory from the verified facet content. A [frozen install](/specification/install#frozen-lockfile) never rewrites it.
 </ResponseField>
 
 <ResponseField name="facets" type="map<name, entry>" required>
@@ -91,7 +104,7 @@ Note what aliasing does not move: `name` is still `viper-planning` and its `file
 <ResponseField name="assets" type="array" required>
   The text assets this facet contributed, each `{ scope, type, name, materialization, files }`. `scope` is `system`, `user`, or `project`; `type` is `skill`, `agent`, or `command`. Names MUST pass asset-name validation, so a crafted lockfile cannot smuggle path traversal into adapter I/O.
 
-  This field holds text assets only: there is no `server` arm. MCP servers are a separate identity space, and a server-only facet is represented with an empty `assets` array.
+  This field holds text assets only. MCP servers are a separate identity space recorded in `servers`, and a server-only facet has an empty `assets` array.
 
   `name` and `files` are authored, unchanged by aliasing, because they anchor integrity.
 
@@ -102,29 +115,61 @@ Note what aliasing does not move: `name` is still `viper-planning` and its `file
   Ownership is derived, not merely asserted. An agent or command entry MUST contain exactly one record at its own canonical primary path, and every record in a skill entry MUST live under that skill's authored root with `SKILL.md` present. A path no derivation from the text asset's authored identity could produce is rejected, so integrity and deletion can never be pointed at an unrelated file.
 </ResponseField>
 
+<ResponseField name="servers" type="array" required>
+  Every MCP server the facet declares, each `{ name, fingerprint, materialization }`, sorted strictly ascending by `name` with no duplicates. Required in `0.4`: an empty array states that the facet declares no servers, and a missing array is a schema violation, never an empty inventory.
+
+  `name` is the authored server name and MUST satisfy the [server name grammar](/specification/manifest#mcp-server-declarations). `fingerprint` is the declaration's [canonical fingerprint](/specification/manifest#canonical-declaration-fingerprint), spelled `sha256:` followed by 64 lowercase hexadecimal digits. `materialization` is the resolved [disposition](/specification/materialization#dispositions), and all three arms are legal: an omitted server stays listed with its fingerprint.
+
+  An alias appears only in `materialization`. It changes neither `name` nor `fingerprint`. The enclosing entry supplies the facet's source, version, and integrity, so a server record never repeats them.
+
+  A record carries no command, argument, environment value, URL, or tool-specific representation, and it is not approval or ownership evidence. See [Server inventory](#server-inventory).
+</ResponseField>
+
 <Note>
-  A `0.2` text-asset entry has no `materialization` field. It reads as `{ "kind": "authored" }`, the only disposition that schema could express.
+  A `0.2` text-asset entry has no `materialization` field. It reads as `{ "kind": "authored" }`, the only disposition that schema could express. Neither `0.2` nor `0.3` records servers.
 </Note>
+
+## Server inventory
+
+<a id="why-mcp-did-not-move-the-lockfile" />
+
+Each `0.4` facet entry records its complete authored server inventory, so a consumer can derive the selected server set and every contributing facet from committed files alone. The [lockfile inventory API](/reference/lockfile-inventory) performs that derivation.
+
+Records come only from verified facet content. Adapters, native configuration, and the machine-local ownership record never supply them. When an install reproduces a facet at its locked integrity, the complete recorded inventory MUST agree with the verified declarations, omitted servers included, or the install fails before any configuration work. See [Verification](/specification/install#verification).
+
+A record never replaces the declaration. Native configuration is always rendered from the integrity-pinned `facet.json`, and facet integrity still detects any change to a declaration's bytes.
+
+### Fingerprint encoding
+
+Every `0.4` fingerprint uses the `facets:mcp-server:v1` [canonical encoding](/specification/manifest#canonical-declaration-fingerprint) and SHA-256. That binding is fixed for `0.4`: a future encoding requires a new lockfile version rather than a new meaning for stored fingerprints.
+
+Two preimages pin the encoding:
+
+```
+["facets:mcp-server:v1","stdio","npx",[],[]]
+["facets:mcp-server:v1","http","https://example.com/mcp"]
+```
+
+### Disclosure
+
+A fingerprint is a hash over the complete portable declaration, including literal environment values. It is not encryption. Anyone holding the lockfile and knowing the rest of a declaration can test guesses for a low-entropy value offline, which matters most for a local-source facet that was never published.
+
+<Warning>
+  Keep secrets out of declarations entirely. Fingerprinting does not omit, redact, or salt any value, and literal-string validation does not detect secrets.
+</Warning>
 
 ## Unrecognized fields
 
-Fields the schema does not define are accepted and survive a rewrite. When an install rebuilds the lockfile it carries forward unrecognized fields on the document, on each facet entry, on a retained entry's `source` when the kind is unchanged, on each text asset matched by authored identity, and on each file record matched by path. Migrating `0.2` to `0.3` preserves them exactly as a same-version write does.
+Fields the schema does not define are accepted and survive a rewrite. When an install rebuilds the lockfile it carries forward unrecognized fields on the document, on each facet entry, on a retained entry's `source` when the kind is unchanged, on each text asset matched by authored identity, on each file record matched by path, and on each `0.4` server record matched by authored name within its facet. Migrating `0.2` or `0.3` to `0.4` preserves them exactly as a same-version write does.
 
 A schema-defined field always wins over an unrecognized field of the same name, so a future version claiming a name cannot be shadowed by stale data. Unrecognized fields attached to something that no longer exists are dropped with it.
 
-## Why MCP did not move the lockfile
+`servers` is schema-defined only in `0.4`. A `servers` field on a `0.2` or `0.3` entry is an unrecognized field: it is never read as an inventory, and migration replaces it whole with the verified inventory without importing anything from its contents.
 
-The lockfile records no MCP declaration, effective server name, or server disposition.
-
-A facet's `integrity` already commits to the exact bytes of the `facet.json` its declarations live in. Recording them again would create a second copy that can disagree with the first.
-
-Two consequences follow:
-
-- **Declaration drift is already detected.** Changing a declaration changes `facet.json`, which changes the facet's integrity, which no longer matches the locked value.
-- **Server intent lives in `facets.json` alone.** Aliases and omissions for servers are project intent rather than resolution. Approval is machine-local and is recorded in neither file.
-
-The trade-off is that a frozen install's server checks may need the locked facet content to prove what it declares. They still run before any mutation.
+Preserving an unrecognized field is not a secrecy filter. Whatever such a field contains is carried forward as written.
 
 ## What the lockfile is not
 
 The lockfile never authorizes deletion. It is shared, version-controlled state describing what should be materialized, so a lockfile pulled from a teammate cannot cause deletion of files this machine never wrote. See [Ownership](/specification/install#ownership).
+
+A server record grants no approval, ownership, or takeover authority. Approval stays [machine-local](/specification/install#mcp-configuration), so a committed lockfile cannot claim another machine consented to running anything.

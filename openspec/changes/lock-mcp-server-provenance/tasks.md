@@ -307,70 +307,70 @@ Run `bun run --cwd packages/protocol test:e2e`, `bun run --cwd packages/cli test
 ## 11. Documentation and release preparation — Research
 
 ### Step 56 - Pause: Switch model for exploration
-- [ ] 11.1 Pause: Switch model for exploration
+- [x] 11.1 Pause: Switch model for exploration
 
 ### Step 57 - Explore: Audit documentation claims and links
-- [ ] 11.2 Explore: Audit documentation claims and links
+- [x] 11.2 Explore: Audit documentation claims and links
 
 Recheck `README.md`, the affected specification/CLI/guide pages, `docs/docs.json`, `docs/AGENTS.md`, and script smoke-test documentation against the implemented public names and format matrix. Locate inbound links to the obsolete lockfile section and confirm the existing README consent/ownership promises remain true.
 
 ### Step 58 - Explore: Confirm release preparation rules
-- [ ] 11.3 Explore: Confirm release preparation rules
+- [x] 11.3 Explore: Confirm release preparation rules
 
 Recheck `.changeset/config.json`, `scripts/README.md`, and release documentation for pre-1.0 breaking bumps, ignored packages, generated release notes, and packed-export rules. Confirm this change needs protocol and CLI release metadata, not an Adapter SDK API rollout or manually edited package versions.
 
 ### Step 59 - Propose: Agree documentation and release-note scope
-- [ ] 11.4 Propose: Agree documentation and release-note scope
+- [x] 11.4 Propose: Agree documentation and release-note scope
 
 Present the documentation, reproducible consumer example, compatibility/migration warnings, and changeset scope for all of group 12, including the local-source fingerprint disclosure risk and the distinction between capability version and current writer version. Obtain approval before writing.
 
 ### Step 60 - Pause: Switch model for implementation
-- [ ] 11.5 Pause: Switch model for implementation
+- [x] 11.5 Pause: Switch model for implementation
 
 ## 12. Documentation and release preparation — Implementation
 
 ### Step 61 - Implement: Document the lockfile 0.4 contract
-- [ ] 12.1 Implement: Document the lockfile 0.4 contract
+- [x] 12.1 Implement: Document the lockfile 0.4 contract
 
 Update `docs/specification/lockfile.mdx`: examples and reader/writer versions, complete server arrays, encoding binding, opaque extensions, legacy lookalikes, migration, and fingerprint disclosure. Replace the obsolete no-server-inventory section while preserving or redirecting its anchor.
 
 ### Step 62 - Implement: Correct omitted-server documentation
-- [ ] 12.2 Implement: Correct omitted-server documentation
+- [x] 12.2 Implement: Correct omitted-server documentation
 
 Update `docs/specification/materialization.mdx`, explicitly replacing “An omitted server leaves no lockfile trace.” Preserve naming, composition, and approval semantics and repair its obsolete section link.
 
 ### Step 63 - Implement: Document frozen and verified-content ordering
-- [ ] 12.3 Implement: Document frozen and verified-content ordering
+- [x] 12.3 Implement: Document frozen and verified-content ordering
 
 Update `docs/specification/install.mdx`: Format capability, Plan over the locked set, Stale intent, and Intent against recorded disposition. Separate pre-fetch checks from later content/native checks and explain legacy removal fallback.
 
 ### Step 64 - Implement: Document the public inventory APIs
-- [ ] 12.4 Implement: Document the public inventory APIs
+- [x] 12.4 Implement: Document the public inventory APIs
 
 Add `docs/reference/lockfile-inventory.mdx` and navigation in `docs/docs.json`. Cover parsing, authored/selected views, all origins, unavailable/conflict results, recorded derivation versus override-aware planning, and the tested consumer-owned comparison example. State trust/disclosure limits without adding an API or CLI command.
 
 ### Step 65 - Implement: Explain install migration and recovery
-- [ ] 12.5 Implement: Explain install migration and recovery
+- [x] 12.5 Implement: Explain install migration and recovery
 
-Update `docs/cli/install.mdx`, replacing the claim that server overrides never cause legacy-format refusal and generalizing the `0.2` troubleshooting entry. Explain capability versus writer versions, metadata-corruption recovery, and unchanged consent.
+Update `docs/cli/install.mdx`, replacing the claim that server overrides never cause legacy-format refusal and generalizing the `0.2` troubleshooting entry. Explain capability versus writer versions, metadata-corruption recovery, and unchanged consent. As approved at 11.4, put the shared `RECONCILE_SERVER_IDENTITY` / `RECONCILE_SERVER_FINGERPRINT` recovery entry in `docs/guides/troubleshooting.mdx` and link to it from the command documentation rather than duplicating cross-command guidance.
 
 ### Step 66 - Implement: Explain removal migration costs
-- [ ] 12.6 Implement: Explain removal migration costs
+- [x] 12.6 Implement: Explain removal migration costs
 
 Update `docs/cli/remove.mdx` with legacy remaining-content fallback, possible network/approval cost, zero-remaining behavior, and recovery. Document rollback through the corresponding committed manifest/lockfile pair, not version-label edits or lockfile deletion.
 
 ### Step 67 - Implement: Refresh the installation guide example
-- [ ] 12.7 Implement: Refresh the installation guide example
+- [x] 12.7 Implement: Refresh the installation guide example
 
 Update `docs/guides/install-facets.mdx` to `0.4` with complete server arrays and links to canonical migration guidance. Leave the accurate README and Adapter SDK contracts unchanged.
 
 ### Step 68 - Implement: Prepare protocol and CLI changesets
-- [ ] 12.8 Implement: Prepare protocol and CLI changesets
+- [x] 12.8 Implement: Prepare protocol and CLI changesets
 
 Add changeset release notes for `@agent-facets/protocol` and `agent-facets` using appropriate pre-1.0 minor bumps. Explain upgrade/migration requirements and unchanged SDK/approval boundaries. Do not bump ignored packages, hand-edit package versions, publish, or pre-author shipped changelog entries.
 
 ### Step 69 - Verify: Run final documentation and repository checks
-- [ ] 12.9 Verify: Run final documentation and repository checks
+- [x] 12.9 Verify: Run final documentation and repository checks
 
 Run documentation validation, broken-link checks, `bun test scripts/lib/changesets.test.ts`, `bun check`, and strict validation of this OpenSpec change. Check edited documentation prose for forbidden em dashes/spaced double hyphens without treating literal flags or untouched historical text as violations. Audit production protocol source for new Bun, filesystem, network, or adapter dependencies. Stop on failure; formatting repairs are implementation work, not part of Verify.
 
