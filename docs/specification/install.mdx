@@ -40,6 +40,13 @@ Verification obligations are defined in the [Integrity Model](/specification/int
 
 On reproduction, an implementation MUST reconcile each file against its recorded per-file integrity before writing, and MUST report the exact drifting path.
 
+When a facet resolves to the integrity its `0.4` entry pins, its recorded [server inventory](/specification/lockfile#server-inventory) MUST also agree with the verified declarations, whatever the source kind or cache state:
+
+- The recorded authored names MUST equal the declared names, omitted servers included. A mismatch MUST report the sorted names that are locked but not declared, and declared but not locked.
+- Each recorded fingerprint MUST equal the fingerprint recomputed from its declaration. A mismatch MUST report the facet, the server, and both fingerprints.
+
+Either failure MUST stop the install before collision prompting, configuration planning, approval, cleanup, or any write, and MUST NOT be repaired by regenerating the records. Dispositions are project intent rather than content, so they are not compared here. A facet that resolves to a different integrity, or a `0.2` or `0.3` entry, has nothing to reconcile, and its inventory is derived fresh from verified content.
+
 ## Composition
 
 The desired set is computed by the deterministic planner defined in [Materialization](/specification/materialization). Text assets and MCP servers are planned in separate identity spaces.
@@ -108,6 +115,20 @@ On success, a non-frozen install MUST write the project manifest, the lockfile, 
 
 A failure anywhere MUST leave all three exactly as they were, and MUST restore every text asset and every native configuration document the operation touched, under the restoration rule in [Ordering](#ordering).
 
+Every successful non-frozen write produces lockfile `0.4`, including a migration from `0.2` or `0.3`. Its server inventories MUST come from verified facet content, never from adapters, native configuration, or the ownership record, and a facet with no servers MUST receive an explicit empty inventory.
+
+## Removal
+
+A removal-only operation MAY rewrite the lockfile without resolving the facets that remain, carrying their entries forward unverified, but only when local state answers the operation completely:
+
+- Every remaining facet has a `0.4` entry matching its manifest source and specifier, and its recorded asset and server dispositions equal manifest intent with no collision.
+- The machine-local ownership record covers every remaining facet and agrees with its entry: versions, integrity, materialized assets, and every active server record by authored name, disposition, and fingerprint, in both directions. An omitted server needs no ownership record.
+- No identity a remaining facet keeps was also claimed by another facet. For a text asset, any other recorded claimant counts, compared by namespace and portably folded name. For a server, recorded claims at that identity with different fingerprints count; identical fingerprints may be shared. Otherwise the bytes on disk may be another claimant's, and only resolution can restore the kept content.
+
+Otherwise the removal MUST fall back to ordinary resolution of the remaining facets, with the usual verification and approval. In particular, a `0.2` or `0.3` lockfile with any remaining facet always falls back, because no complete inventory exists to carry forward. It MUST NOT invent an inventory or write a legacy version. A failed fallback MUST commit nothing and MUST report both why resolution was needed and the underlying failure.
+
+Removing every facet needs no inventory, so it MUST NOT fetch removed content to produce an empty `0.4` lockfile. In every case, deletion authority stays with the ownership record: a lockfile record never authorizes deleting a native entry.
+
 ## Frozen lockfile
 
 Frozen mode treats the lockfile as authoritative for what to reproduce. It is not authority to delete: that stays with the machine-local record.
@@ -123,20 +144,32 @@ These gates MUST run before any network access, so a frozen install can refuse w
     Every manifest facet MUST have a satisfying lockfile entry, the lockfile MUST NOT pin anything the manifest dropped, and git and local sources MUST match their locked provenance.
   </Step>
   <Step title="Format capability">
-    A lockfile version with no field for a text-asset disposition MUST fail when the manifest declares one, rather than ignore the intent. A server disposition never triggers this, because no lockfile version records server intent.
+    A lockfile version that cannot record a disposition the manifest declares MUST fail, rather than ignore the intent. Each kind has an exact set of capable versions, never a numeric threshold:
+
+    | Lockfile | Text-asset override | Server override |
+    | --- | --- | --- |
+    | `0.2` | Fails, requires `0.3` | Fails, requires `0.4` |
+    | `0.3` | Checked below | Fails, requires `0.4` |
+    | `0.4` | Checked below | Checked below |
+
+    The reported required version names the capability that is missing, not the version a normal install writes, which is always `0.4`.
   </Step>
   <Step title="Plan over the locked set">
-    The planner runs against the lockfile's recorded text assets, so a collision or invalid alias in recorded state is reported before anything is downloaded.
+    The planner runs against the lockfile's recorded text assets and, for `0.4`, its recorded server names and fingerprints. Every manifest facet takes part, including one with an empty inventory. A collision or invalid alias in recorded state is reported before anything is downloaded, with servers identified by fingerprint because no declaration has been read.
   </Step>
   <Step title="Stale intent">
-    An override naming a text asset the locked version does not contain, or a server the pinned facet does not declare, is blocking drift. Frozen mode reports it without removing it.
+    An override naming a text asset the locked version does not contain, or a server absent from a `0.4` entry's inventory, is blocking drift. Frozen mode reports it without removing it.
   </Step>
   <Step title="Intent against recorded disposition">
-    For every locked text asset, what the manifest asks for MUST equal what the lockfile records. Editing an alias without a normal install is drift, exactly like editing a version.
+    For every locked text asset and every `0.4` server record, omitted ones included, what the manifest asks for MUST equal what the lockfile records. A missing override means authored, so dropping a recorded alias is drift rather than a request to keep it. Editing an alias without a normal install is drift, exactly like editing a version, even when the edit would cure a collision.
   </Step>
 </Steps>
 
-MCP adds its own pre-mutation gates: an unresolved server collision, an adapter that cannot configure servers, an unparseable native document, or an unapproved declaration MUST fail before any write. These checks MAY need to fetch locked content, because declarations live in the facet rather than the lockfile.
+Passing these gates proves only that intent matches recorded metadata. Every facet MUST then still reproduce its locked integrity and, for `0.4`, its recorded server inventory, as defined in [Verification](#verification).
+
+MCP adds its own pre-mutation gates after content is acquired: an unresolved collision among declarations, an adapter that cannot configure servers, an unparseable native document, or an unapproved declaration MUST fail before any write. A locked fingerprint is never approval.
+
+A `0.2` or `0.3` lockfile with no server override still reproduces. Its servers are taken from the verified facet content under their authored names, and no inventory is recorded.
 
 Once every check passes, frozen mode MAY reconcile native configuration and the machine-local record, including removing an owned entry the project no longer desires. It MUST NOT write the project manifest or lockfile.
 

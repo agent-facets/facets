@@ -127,6 +127,34 @@ function skillFixture(facet: string, skill: string, version = '1.0.0'): string {
   return `./vendor/${facet}`
 }
 
+/**
+ * Rewrite the written lockfile as an explicit legacy document: the server
+ * inventory dropped, and for `0.2` every asset disposition too. The writer
+ * only emits the current format, so a legacy input can only be a fixture.
+ */
+function relockLegacy(version: 0.2 | 0.3): void {
+  const path = join(projectRoot, 'facets.lock')
+  const lock = JSON.parse(readFileSync(path, 'utf8'))
+  lock.lockfileVersion = version
+  for (const entry of Object.values(lock.facets) as Array<Record<string, unknown>>) {
+    delete entry.servers
+    if (version === 0.2) {
+      for (const asset of entry.assets as Array<Record<string, unknown>>) delete asset.materialization
+    }
+  }
+  writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
+}
+
+/** Every file a refused run must leave exactly as it found it. */
+function projectFiles(documentPath: string): Record<string, string | null> {
+  return {
+    manifest: readIfPresent(join(projectRoot, 'facets.json')),
+    lockfile: readIfPresent(join(projectRoot, 'facets.lock')),
+    receipt: readIfPresent(receiptPath(projectRoot)),
+    document: readIfPresent(documentPath),
+  }
+}
+
 function writeManifest(value: unknown): string {
   const text = `${JSON.stringify(value, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.json'), text)
@@ -1406,6 +1434,9 @@ describe('mcp — frozen reproduction', () => {
     const receiptBefore = readFileSync(receiptPath(projectRoot), 'utf8')
 
     writeManifest({ manifestVersion: 0.2, facets: { alpha: a, beta: b } })
+    // The sources are gone: a collision reported now was found from the
+    // locked inventory alone, before anything was fetched or built.
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
 
     const result = await runInstall({
       projectRoot,
@@ -1415,13 +1446,17 @@ describe('mcp — frozen reproduction', () => {
 
     if (result.ok) expect.unreachable()
     // Frozen has no resolver, so a contested effective name can only be
-    // reported — as a collision naming every claimant, not as some earlier
-    // gate's drift.
-    if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
+    // reported — as a collision naming every claimant by its locked
+    // fingerprint, not as some earlier gate's drift.
+    if (result.failure.code !== 'LOCKED_MATERIALIZATION_COLLISION') expect.unreachable()
     const group = result.failure.groups.find((entry) => entry.kind === 'mcp-server')
-    if (group === undefined) expect.unreachable()
+    if (group?.kind !== 'mcp-server') expect.unreachable()
     expect(group.group.effectiveName).toBe('filesystem')
-    expect(group.group.members.map((member) => member.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(group.group.members.map((member) => [member.facet, member.fingerprint])).toEqual([
+      ['alpha', computeMcpServerFingerprint(STDIO)],
+      ['beta', computeMcpServerFingerprint(HTTP)],
+    ])
+    expect(JSON.stringify(result.failure)).not.toContain('npx')
 
     expect(result.rollback.kind).toBe('not-needed')
     expect(readFileSync(rec.documentPath, 'utf8')).toBe(documentBefore)
@@ -1468,11 +1503,10 @@ describe('mcp — frozen reproduction', () => {
     expect(existsSync(rec.documentPath)).toBe(false)
   })
 
-  test('a server-only override does not make an older lockfile unrepresentable', async () => {
-    // Servers have no lockfile representation at any version, so an entry
-    // whose only override is a server alias asks nothing of the lockfile
-    // format. Reporting a migration here would name a fix that changes
-    // nothing.
+  test.each([0.2, 0.3])('a server override cannot be frozen under a %p lockfile', async (version) => {
+    // No legacy format records a server disposition, so reproducing one would
+    // apply a decision the lockfile never recorded. Refused before fetch, with
+    // the capability that is missing — not the writer version.
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
@@ -1486,16 +1520,14 @@ describe('mcp — frozen reproduction', () => {
       ).ok,
     ).toBe(true)
 
-    const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
-    lockfile.lockfileVersion = 0.2
-    for (const facet of Object.values(lockfile.facets) as Array<Record<string, unknown>>) {
-      facet.assets = []
-    }
-    writeFileSync(join(projectRoot, 'facets.lock'), `${JSON.stringify(lockfile, null, 2)}\n`)
+    relockLegacy(version)
     writeManifest({
       manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
     })
+    const before = projectFiles(rec.documentPath)
+    const calls = rec.mcpCalls.length
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
 
     const result = await runInstall({
       projectRoot,
@@ -1503,10 +1535,275 @@ describe('mcp — frozen reproduction', () => {
       operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
-    // It may still fail for a reason of its own, but never for this one.
-    if (!result.ok && result.failure.code === 'LOCKFILE_DRIFT') {
-      expect(result.failure.facets.map((f) => f.reason)).not.toContain('materialization-unrepresentable')
-    }
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(result.failure.facets).toEqual([
+      { name: 'alpha', reason: 'materialization-unrepresentable', lockfileVersion: version, requiredVersion: 0.4 },
+    ])
+    expect(rec.mcpCalls.slice(calls)).toEqual([])
+    expect(projectFiles(rec.documentPath)).toEqual(before)
+  })
+
+  test.each([0.2, 0.3])('a %p lockfile with no server override still reproduces its servers', async (version) => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a } })
+    const rec = mcpAdapter('rec')
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
+    relockLegacy(version)
+    rmSync(rec.documentPath, { force: true })
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+    const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
+    })
+
+    if (!result.ok) expect.unreachable(`frozen legacy reproduction failed: ${result.failure.code}`)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+    // Frozen never migrates: both shared files stay byte-for-byte, and the
+    // reported lockfile is the retained legacy one.
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBefore)
+    expect(result.lockfile.lockfileVersion).toBe(version)
+  })
+})
+
+/**
+ * Frozen checks over a `0.4` lockfile's recorded server inventory.
+ *
+ * Every refusal here is decided from `facets.json` and `facets.lock` alone, so
+ * each test deletes the facet sources first: a refusal that still arrives
+ * proves nothing was fetched, cloned, or built to reach it.
+ */
+describe('mcp — frozen checks over the locked inventory', () => {
+  /** Install normally, then remove the sources so any fetch would fail. */
+  async function seedThenUnplug(manifest: unknown) {
+    writeManifest(manifest)
+    const rec = mcpAdapter('rec')
+    const seeded = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
+    if (!seeded.ok) expect.unreachable(`seed failed: ${seeded.failure.code}`)
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
+    return rec
+  }
+
+  async function frozen(rec: ReturnType<typeof mcpAdapter>) {
+    const before = projectFiles(rec.documentPath)
+    const calls = rec.mcpCalls.length
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: { kind: 'preapproved' } },
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(rec.mcpCalls.slice(calls)).toEqual([])
+    expect(projectFiles(rec.documentPath)).toEqual(before)
+    return result.failure
+  }
+
+  test('a stale server override on a facet with an empty inventory is reported before fetch', async () => {
+    const b = skillFixture('beta', 'review')
+    const rec = await seedThenUnplug({ facets: { beta: b } })
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { beta: { source: b, materialization: { servers: { gone: { kind: 'omitted' } } } } },
+    })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(failure.facets).toEqual([
+      { name: 'beta', reason: 'stale-override', contribution: { kind: 'mcp-server' }, authoredName: 'gone' },
+    ])
+  })
+
+  test('removing a recorded alias is disposition drift, not a silent keep', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const rec = await seedThenUnplug({
+      manifestVersion: 0.2,
+      facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
+    })
+    writeManifest({ manifestVersion: 0.2, facets: { alpha: a } })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(failure.facets).toEqual([
+      {
+        name: 'alpha',
+        reason: 'server-materialization-drift',
+        authoredName: 'filesystem',
+        manifest: { kind: 'authored' },
+        locked: { kind: 'aliased', as: 'fs' },
+      },
+    ])
+  })
+
+  test('a changed omission is disposition drift', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const rec = await seedThenUnplug({ facets: { alpha: a } })
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+    })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(failure.facets.map((entry) => entry.reason)).toEqual(['server-materialization-drift'])
+  })
+
+  test('a manifest-only alias that would cure a recorded collision is still refused', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', HTTP)
+    const rec = await seedThenUnplug({
+      manifestVersion: 0.2,
+      facets: { alpha: a, beta: { source: b, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+    })
+    // A hand-merge that leaves both claims active in the lockfile.
+    const path = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(path, 'utf8'))
+    lock.facets.beta.servers[0].materialization = { kind: 'authored' }
+    writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
+    // The manifest separates them, which the lockfile never recorded.
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: a,
+        beta: { source: b, materialization: { servers: { filesystem: { kind: 'aliased', as: 'b-fs' } } } },
+      },
+    })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(failure.facets).toEqual([
+      {
+        name: 'beta',
+        reason: 'server-materialization-drift',
+        authoredName: 'filesystem',
+        manifest: { kind: 'aliased', as: 'b-fs' },
+        locked: { kind: 'authored' },
+      },
+    ])
+  })
+
+  test('asset and server collisions and stale intent are reported together', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', HTTP)
+    const c = skillFixture('gamma', 'review')
+    const d = skillFixture('delta', 'other')
+    const rec = await seedThenUnplug({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: a,
+        beta: { source: b, materialization: { servers: { filesystem: { kind: 'omitted' } } } },
+        gamma: c,
+        delta: d,
+      },
+    })
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { servers: { gone: { kind: 'omitted' } } } },
+        beta: b,
+        gamma: c,
+        delta: { source: d, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },
+      },
+    })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKED_MATERIALIZATION_COLLISION') expect.unreachable()
+    expect(failure.groups.map((group) => group.kind)).toEqual(['asset', 'mcp-server'])
+    expect(failure.staleOverrides).toEqual([
+      { facet: 'alpha', contribution: { kind: 'mcp-server' }, authoredName: 'gone', disposition: { kind: 'omitted' } },
+    ])
+  })
+
+  test('matching recorded intent passes the metadata gates and still needs approval', async () => {
+    // A valid lockfile is not consent. Gates pass, content is verified, and
+    // the run still stops for approval this machine never gave.
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
+    })
+    const rec = mcpAdapter('rec')
+    const seeded = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
+    if (!seeded.ok) expect.unreachable()
+    rmSync(receiptPath(projectRoot), { force: true })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: true },
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MCP_CONSENT_REQUIRED')
+  })
+
+  test.each([0.3, 0.4])('a recorded asset alias still reproduces under a %p lockfile', async (version) => {
+    const a = skillFixture('alpha', 'review')
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
+      },
+    })
+    const rec = mcpAdapter('rec')
+    const seeded = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
+    if (!seeded.ok) expect.unreachable()
+    if (version === 0.3) relockLegacy(0.3)
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
+    })
+
+    if (!result.ok) expect.unreachable(`frozen failed: ${result.failure.code}`)
+    expect(result.lockfile.lockfileVersion).toBe(version)
+  })
+
+  test.each([
+    [{ skills: { review: { kind: 'aliased', as: 'vendor-review' } } }, 0.3],
+    [{ skills: { review: { kind: 'aliased', as: 'vendor-review' } }, servers: { fs: { kind: 'omitted' } } }, 0.4],
+  ])('a 0.2 refusal names the capability the overrides need (%j)', async (materialization, requiredVersion) => {
+    const a = skillFixture('alpha', 'review')
+    const rec = await seedThenUnplug({ facets: { alpha: a } })
+    relockLegacy(0.2)
+    writeManifest({ manifestVersion: 0.2, facets: { alpha: { source: a, materialization } } })
+
+    const failure = await frozen(rec)
+
+    if (failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(failure.facets).toEqual([
+      { name: 'alpha', reason: 'materialization-unrepresentable', lockfileVersion: 0.2, requiredVersion },
+    ])
   })
 })
 
@@ -1651,7 +1948,7 @@ describe('mcp — offline removal', () => {
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
   })
 
-  test('an omitted server is recorded nowhere', async () => {
+  test('an omitted server is locked, but neither claimed nor configured', async () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({
       manifestVersion: 0.2,
@@ -1670,10 +1967,109 @@ describe('mcp — offline removal', () => {
     ).toBe(true)
 
     // Never materialized, so there is nothing to own and nothing to approve.
-    // A claim would assert two things that are both false.
+    // A claim would assert two things that are both false. The shared lockfile
+    // still records the authored server, with its verified fingerprint.
     const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
     expect(receipt.facets.alpha?.configurations ?? []).toEqual([])
     expect(readIfPresent(rec.documentPath)).toBe(null)
+    const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lock.facets.alpha.servers).toEqual([
+      { name: 'filesystem', fingerprint: computeMcpServerFingerprint(STDIO), materialization: { kind: 'omitted' } },
+    ])
+  })
+
+  /** Install `facets` normally, so the receipt witnesses every claim. */
+  async function installed(facets: Record<string, unknown>, manifestVersion?: number) {
+    writeManifest(manifestVersion === undefined ? { facets } : { manifestVersion, facets })
+    const rec = mcpAdapter('rec')
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
+    if (!result.ok) expect.unreachable(`seed failed: ${result.failure.code}`)
+    return rec
+  }
+
+  test('a remaining omitted record survives an offline removal without a claim', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const rec = await installed(
+      {
+        alpha: { source: a, materialization: { servers: { filesystem: { kind: 'omitted' } } } },
+        beta: skillFixture('beta', 'review'),
+      },
+      0.2,
+    )
+    const lockedAlpha = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).facets.alpha
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
+
+    const removed = await runRemove({ projectRoot, names: ['beta'], adapters: [rec.adapter] })
+
+    expect(removed.ok).toBe(true)
+    expect(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).facets.alpha).toEqual(lockedAlpha)
+  })
+
+  test('a server record extension survives an offline removal of another facet', async () => {
+    const rec = await installed({
+      alpha: serverFixture('alpha', 'filesystem', STDIO),
+      beta: skillFixture('beta', 'review'),
+    })
+    const path = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(path, 'utf8'))
+    lock.facets.alpha.servers[0].recordNote = 'kept'
+    writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
+
+    const removed = await runRemove({ projectRoot, names: ['beta'], adapters: [rec.adapter] })
+
+    expect(removed.ok).toBe(true)
+    expect(JSON.parse(readFileSync(path, 'utf8')).facets.alpha.servers[0].recordNote).toBe('kept')
+  })
+
+  test('an unowned native entry is not deleted on the strength of a locked record', async () => {
+    // The lockfile says `alpha` declared `filesystem`, and the native entry is
+    // there — but this machine's receipt holds no claim on it. A locked record
+    // is shared state; only a claim grants deletion authority.
+    const rec = await installed({
+      alpha: serverFixture('alpha', 'filesystem', STDIO),
+      beta: skillFixture('beta', 'review'),
+    })
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    receipt.facets.alpha.configurations = []
+    writeFileSync(receiptPath(projectRoot), `${JSON.stringify(receipt, null, 2)}\n`)
+    rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
+
+    const removed = await runRemove({ projectRoot, names: ['alpha'], adapters: [rec.adapter] })
+
+    expect(removed.ok).toBe(true)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+  })
+
+  test('a remaining record the receipt never claimed forces resolution instead of adopting it', async () => {
+    const rec = await installed({
+      alpha: serverFixture('alpha', 'filesystem', STDIO),
+      beta: skillFixture('beta', 'review'),
+    })
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    receipt.facets.alpha.configurations = []
+    writeFileSync(receiptPath(projectRoot), `${JSON.stringify(receipt, null, 2)}\n`)
+    rmSync(join(projectRoot, 'vendor/alpha'), { recursive: true, force: true })
+
+    const reasons: string[] = []
+    const removed = await runRemove({
+      projectRoot,
+      names: ['beta'],
+      adapters: [rec.adapter],
+      onStage: (event) => {
+        if (event.kind === 'removal-resolution-required') reasons.push(event.reason)
+      },
+    })
+
+    // The kept facet's content is gone, so the required resolution fails —
+    // and nothing is committed on the lockfile's word alone.
+    expect(reasons).toEqual(['remaining-receipt-disagrees'])
+    expect(removed.ok).toBe(false)
+    expect(JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8')).facets.alpha.configurations).toEqual([])
   })
 })
 
@@ -1949,16 +2345,14 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
   }
 
   /**
-   * Rewrite the written lockfile as an explicit `0.4` input with the given
-   * inventory for `alpha` and an empty one for every other facet. The writer
-   * is still `0.3`, so a `0.4` previous document can only come from a
-   * fixture — which is also how a teammate's newer lockfile arrives.
+   * Replace `alpha`'s recorded inventory in the `0.4` lockfile the seeding
+   * install wrote — the shape a hand edit or a bad merge leaves. Every other
+   * facet keeps exactly the inventory the writer derived for it.
    */
-  function relock04(servers: InventoryRecord[]): void {
+  function rewriteAlphaInventory(servers: InventoryRecord[]): void {
     const path = join(projectRoot, 'facets.lock')
     const lock = JSON.parse(readFileSync(path, 'utf8'))
-    lock.lockfileVersion = 0.4
-    for (const entry of Object.values(lock.facets) as Array<Record<string, unknown>>) entry.servers = []
+    expect(lock.lockfileVersion).toBe(0.4)
     lock.facets.alpha.servers = servers
     writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
   }
@@ -2035,7 +2429,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test(`${mode}: a changed locked fingerprint fails before native planning or any write`, async () => {
       await seed()
-      relock04([authored('filesystem', OTHER_FINGERPRINT)])
+      rewriteAlphaInventory([authored('filesystem', OTHER_FINGERPRINT)])
       const before = snapshot(mcpAdapter('rec').documentPath)
 
       const { result, rec, stages } = await attempt(frozen)
@@ -2058,7 +2452,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test(`${mode}: a declared server missing from the lock is unexpected and is not appended`, async () => {
       await seed()
-      relock04([])
+      rewriteAlphaInventory([])
       const before = snapshot(mcpAdapter('rec').documentPath)
 
       const { result, rec } = await attempt(frozen)
@@ -2076,7 +2470,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test(`${mode}: a locked server the content does not declare is missing`, async () => {
       await seed()
-      relock04([
+      rewriteAlphaInventory([
         authored('filesystem', computeMcpServerFingerprint(STDIO)),
         authored('gone', computeMcpServerFingerprint(HTTP)),
       ])
@@ -2094,7 +2488,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test(`${mode}: a matching inventory reproduces`, async () => {
       await seed()
-      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+      rewriteAlphaInventory([authored('filesystem', computeMcpServerFingerprint(STDIO))])
       const lockBefore = readIfPresent(join(projectRoot, 'facets.lock'))
 
       const { result } = await attempt(frozen)
@@ -2132,7 +2526,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test('control: the pending cleanup and consent are real', async () => {
       const ownedAsset = await seedPendingWork(false)
-      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+      rewriteAlphaInventory([authored('filesystem', computeMcpServerFingerprint(STDIO))])
 
       const { result, prompts } = await attemptNormal()
 
@@ -2143,7 +2537,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test('control: the pending collision is real', async () => {
       await seedPendingWork(true)
-      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+      rewriteAlphaInventory([authored('filesystem', computeMcpServerFingerprint(STDIO))])
 
       const { result, prompts } = await attemptNormal()
 
@@ -2153,7 +2547,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
 
     test('a mismatch refuses before the cleanup, the consent, and the collision prompt', async () => {
       const ownedAsset = await seedPendingWork(true)
-      relock04([authored('filesystem', OTHER_FINGERPRINT)])
+      rewriteAlphaInventory([authored('filesystem', OTHER_FINGERPRINT)])
       const before = snapshot(mcpAdapter('rec').documentPath)
       const assetBefore = readIfPresent(ownedAsset)
 
@@ -2178,7 +2572,9 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
       manifestVersion: 0.2,
       facets: { alpha: { source, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
     })
-    relock04([{ name: 'filesystem', fingerprint: OTHER_FINGERPRINT, materialization: { kind: 'omitted' } }])
+    rewriteAlphaInventory([
+      { name: 'filesystem', fingerprint: OTHER_FINGERPRINT, materialization: { kind: 'omitted' } },
+    ])
 
     const { result, rec } = await attemptNormal()
 
@@ -2190,7 +2586,7 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
   test('changing an alias at unchanged content is intent, not a content mismatch', async () => {
     const source = serverFixture('alpha', 'filesystem', STDIO)
     await seed()
-    relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+    rewriteAlphaInventory([authored('filesystem', computeMcpServerFingerprint(STDIO))])
     writeManifest({
       manifestVersion: 0.2,
       facets: {
@@ -2207,29 +2603,39 @@ describe('mcp — same-integrity server inventory reconciliation', () => {
   test('a content edit at the same version is not treated as a same-integrity mismatch', async () => {
     await seed()
     // Stale on purpose: wrong name set and wrong fingerprint for the old content.
-    relock04([authored('gone', OTHER_FINGERPRINT)])
+    rewriteAlphaInventory([authored('gone', OTHER_FINGERPRINT)])
     const edited: McpServerDeclaration = { type: 'stdio', command: 'other-mcp' }
     serverFixture('alpha', 'filesystem', edited)
 
     const { result, rec, prompts } = await attemptNormal()
 
     if (!result.ok) expect.unreachable()
-    // The new declaration is what this run planned and asked about. Whether
-    // its inventory is persisted is the writer's job, which is still `0.3`.
+    // The new declaration is what this run planned and asked about, and the
+    // inventory it persisted is derived from it — the stale records are gone.
     expect(prompts.consent).toBe(1)
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: edited })
+    const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lock.facets.alpha.servers).toEqual([authored('filesystem', computeMcpServerFingerprint(edited))])
   })
 
-  test('a legacy servers lookalike is not a reconciliation baseline', async () => {
+  test('a legacy servers lookalike is not a reconciliation baseline, and is replaced', async () => {
     await seed()
+    relockLegacy(0.3)
     const path = join(projectRoot, 'facets.lock')
     const lock = JSON.parse(readFileSync(path, 'utf8'))
-    expect(lock.lockfileVersion).toBe(0.3)
-    lock.facets.alpha.servers = [authored('gone', OTHER_FINGERPRINT)]
+    lock.facets.alpha.servers = [{ ...authored('gone', OTHER_FINGERPRINT), legacyNote: 'not evidence' }]
     writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
 
     const { result } = await attemptNormal()
 
     if (!result.ok) expect.unreachable()
+    // Migrated: the canonical inventory comes from the verified declaration,
+    // and nothing inside the lookalike survives as a record or an extension.
+    const written = readFileSync(path, 'utf8')
+    expect(JSON.parse(written).lockfileVersion).toBe(0.4)
+    expect(JSON.parse(written).facets.alpha.servers).toEqual([
+      authored('filesystem', computeMcpServerFingerprint(STDIO)),
+    ])
+    expect(written).not.toContain('not evidence')
   })
 })

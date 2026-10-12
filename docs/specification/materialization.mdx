@@ -46,7 +46,7 @@ A project resolves each authored contribution to exactly one outcome.
 </ResponseField>
 
 <ResponseField name="omitted" type="{ kind: 'omitted' }">
-  Do not materialize this contribution or any file it owns. An omitted text asset is still resolved, verified, and recorded in the lockfile. It simply never reaches an adapter, and is never approved or owned.
+  Do not materialize this contribution or any file it owns. An omitted contribution is still resolved, verified, and recorded in the lockfile. It simply never reaches an adapter, and is never approved or owned.
 </ResponseField>
 
 Two narrower forms derive from these:
@@ -54,7 +54,7 @@ Two narrower forms derive from these:
 - A project override admits only `aliased` and `omitted`, because `authored` is the absence of one.
 - A materialized disposition admits only `authored` and `aliased`, because an omitted contribution was never materialized.
 
-An omitted text asset stays in the lockfile with its complete authored file records. Dropping it would make an omission indistinguishable from a facet that never published it. An omitted server leaves no lockfile trace, because [the lockfile records no server intent at all](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
+An omitted text asset stays in the lockfile with its complete authored file records. Dropping it would make an omission indistinguishable from a facet that never published it. An omitted server likewise stays in the lockfile's [server inventory](/specification/lockfile#server-inventory) with its authored name and fingerprint. It is never part of the selected server set and is never approved or owned.
 
 ## Recording intent
 

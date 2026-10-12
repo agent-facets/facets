@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import type {
   CurrentLockfileFacet,
   Lockfile02Facet,
+  Lockfile04ServerEntry,
   MaterializationDisposition,
+  McpServerFingerprint,
   SupportedLockfileFacet,
 } from '@agent-facets/protocol'
 import { classifyOutcome } from '../classify-outcome.ts'
@@ -27,6 +29,7 @@ const entry = (
       files: [{ path: 'skills/planning/SKILL.md', integrity: HASH }],
     },
   ],
+  servers: [],
 })
 
 /** A `0.2` entry: per-file records, but no disposition field. */
@@ -148,6 +151,75 @@ describe('classifyOutcome', () => {
     test('a 0.2 entry against a new omission is an update', () => {
       const previous: SupportedLockfileFacet = entry02('1.0.0')
       expect(classifyOutcome('cowsay', previous, entry('1.0.0', { kind: 'omitted' }), 0).kind).toBe('updated')
+    })
+  })
+
+  // The lockfile records each server's disposition, so a changed alias or
+  // omission is visible even when this machine's receipt cannot speak to it.
+  describe('server disposition changes against a recorded inventory', () => {
+    const FP: McpServerFingerprint = `sha256:${'a'.repeat(64)}`
+    const AUTHORED: MaterializationDisposition = { kind: 'authored' }
+
+    const server = (name: string, materialization: MaterializationDisposition = AUTHORED): Lockfile04ServerEntry => ({
+      name,
+      fingerprint: FP,
+      materialization,
+    })
+
+    /** A current entry with no assets and the given servers. */
+    const withServers = (...servers: Lockfile04ServerEntry[]): CurrentLockfileFacet => ({
+      ...entry('1.0.0'),
+      servers,
+    })
+
+    test.each([
+      ['an alias is added', AUTHORED, { kind: 'aliased', as: 'fs' }],
+      ['an alias target changes', { kind: 'aliased', as: 'one' }, { kind: 'aliased', as: 'two' }],
+      ['an alias is removed', { kind: 'aliased', as: 'fs' }, AUTHORED],
+      ['a server is omitted', AUTHORED, { kind: 'omitted' }],
+      ['an omitted server is restored', { kind: 'omitted' }, AUTHORED],
+    ] as const)('%s → updated', (_label, before, after) => {
+      const previous = [server('filesystem', before)]
+      const current = withServers(server('filesystem', after))
+      expect(classifyOutcome('alpha', entry('1.0.0'), current, 0, undefined, previous)).toEqual({
+        kind: 'updated',
+        name: 'alpha',
+        oldVersion: '1.0.0',
+        newVersion: '1.0.0',
+      })
+    })
+
+    test('the same dispositions in a different order are unchanged', () => {
+      const alias: MaterializationDisposition = { kind: 'aliased', as: 'fs' }
+      const previous = [server('search'), server('filesystem', alias)]
+      const current = withServers(server('filesystem', alias), server('search'))
+      expect(classifyOutcome('alpha', entry('1.0.0'), current, 0, undefined, previous).kind).toBe('unchanged')
+    })
+
+    test('no recorded inventory proves nothing, so a disposition alone is not an update', () => {
+      const current = withServers(server('filesystem', { kind: 'omitted' }))
+      expect(classifyOutcome('alpha', entry('1.0.0'), current, 0, undefined, undefined).kind).toBe('unchanged')
+    })
+
+    test('a declaration absent from the recorded inventory is not compared', () => {
+      // A changed declaration SET is a content change, left to other checks.
+      const current = withServers(server('filesystem', { kind: 'aliased', as: 'fs' }))
+      expect(classifyOutcome('alpha', entry('1.0.0'), current, 0, undefined, []).kind).toBe('unchanged')
+    })
+
+    test('a server intent change outranks a repair', () => {
+      const previous = [server('filesystem')]
+      const current = withServers(server('filesystem', { kind: 'aliased', as: 'fs' }))
+      const work = { intentChanged: false, reconciled: true }
+      expect(classifyOutcome('alpha', entry('1.0.0'), current, 2, work, previous).kind).toBe('updated')
+    })
+
+    test('an unchanged inventory with native work is still a repair', () => {
+      const previous = [server('filesystem')]
+      const work = { intentChanged: false, reconciled: true }
+      expect(classifyOutcome('alpha', entry('1.0.0'), withServers(server('filesystem')), 0, work, previous).kind).toBe(
+        'repaired',
+      )
     })
   })
 })

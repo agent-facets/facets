@@ -254,15 +254,18 @@ export function countOverrides(overrides: FacetMaterializationOverrides | undefi
 /**
  * How many overrides an entry declares in its ASSET groups only.
  *
- * Separate from {@link countOverrides} because one caller — the frozen
- * lockfile-format gate — is asking a narrower question: can this lockfile
- * VERSION record the dispositions this entry declares? Servers are absent
- * from the lockfile at every version by design, so a server alias is not
- * something an older lockfile fails to express; counting it there reported a
- * migration the user could not perform and that would not have helped.
+ * Separate from {@link countOverrides} because the frozen lockfile-format gate
+ * asks a per-domain question: can this lockfile VERSION record the
+ * dispositions this entry declares? Asset dispositions are recordable from
+ * `0.3`, server dispositions only from `0.4`, so the two are counted apart.
  */
 export function countAssetOverrides(overrides: FacetMaterializationOverrides | undefined): number {
   return countOverridesIn(overrides, ASSET_OVERRIDE_GROUPS)
+}
+
+/** How many overrides an entry declares in its SERVER group only. */
+export function countServerOverrides(overrides: FacetMaterializationOverrides | undefined): number {
+  return countOverridesIn(overrides, [SERVER_OVERRIDE_GROUP])
 }
 
 /**

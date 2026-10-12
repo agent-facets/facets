@@ -99,23 +99,35 @@ describe('lockfile version constants', () => {
   // earlier documents still load and migrate; that breadth is a property of
   // the format, not a staged writer rollout.
   test('the written version is the current schema and is itself readable', () => {
-    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_3)
+    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_4)
     expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(CURRENT_LOCKFILE_VERSION)
   })
 
-  test('the earlier readable version remains readable', () => {
+  test('the earlier readable versions remain readable', () => {
     expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LOCKFILE_VERSION_0_2)
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LOCKFILE_VERSION_0_3)
   })
 })
 
 describe('CurrentLockfileSchema', () => {
-  test('accepts a 0.3 lockfile with sorted per-file integrity records', () => {
-    expect(CurrentLockfileSchema(lockfile03)).not.toBeInstanceOf(type.errors)
+  test('accepts a 0.4 lockfile with sorted per-file integrity records and a server inventory', () => {
+    expect(
+      CurrentLockfileSchema({ ...lockfile03, lockfileVersion: 0.4, facets: withServers(lockfile03.facets) }),
+    ).not.toBeInstanceOf(type.errors)
   })
 
   test('rejects the 0.2 shape, which carries no materialization disposition', () => {
     expect(CurrentLockfileSchema(lockfile02)).toBeInstanceOf(type.errors)
   })
+
+  test('rejects the 0.3 document, which carries no server inventory', () => {
+    expect(CurrentLockfileSchema(lockfile03)).toBeInstanceOf(type.errors)
+  })
+
+  /** The same entries, each with an explicitly empty server inventory. */
+  function withServers(facets: Record<string, object>): Record<string, object> {
+    return Object.fromEntries(Object.entries(facets).map(([name, entry]) => [name, { ...entry, servers: [] }]))
+  }
 
   test('accepts single-file agent and command entries listing exactly their primary path', () => {
     const agent = {
@@ -137,13 +149,14 @@ describe('CurrentLockfileSchema', () => {
 
   function withAssets(assets: unknown[]): unknown {
     return {
-      lockfileVersion: 0.3,
+      lockfileVersion: 0.4,
       facets: {
         cowsay: {
           source: { kind: 'local', path: '../cowsay' },
           version: '1.0.0',
           integrity: HASH,
           assets,
+          servers: [],
         },
       },
     }
@@ -711,8 +724,9 @@ describe('parseLockfileDocument — 0.4 dispatch', () => {
     expect(result.failure.code).toBe('unsupported-lockfile-version')
   })
 
-  test('adding a 0.4 reader does not change the version a normal install writes', () => {
-    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_3)
-    expect(CurrentLockfileSchema(lockfile04([]))).toBeInstanceOf(type.errors)
+  test('the current writer schema is exactly the 0.4 reader', () => {
+    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_4)
+    expect(CurrentLockfileSchema(lockfile04([]))).not.toBeInstanceOf(type.errors)
+    expect(CurrentLockfileSchema(lockfile03)).toBeInstanceOf(type.errors)
   })
 })

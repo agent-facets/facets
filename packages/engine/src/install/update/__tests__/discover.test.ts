@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { SupportedLockfile } from '@agent-facets/protocol'
+import type { Lockfile04Facet, SupportedLockfile } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../../manifest/mutations.ts'
 import { describeVersionSpec } from '../../../registry/describe.ts'
 import { MAX_REGISTRY_METADATA_SPECIFIERS } from '../../../registry/resolve-metadata.ts'
@@ -30,17 +30,18 @@ function manifest(entries: Array<[string, string]>): Record<string, NormalizedFa
   return record(entries.map(([name, source]) => [name, { source, overrides: undefined }]))
 }
 
-function lockedRegistry(version: string) {
+function lockedRegistry(version: string): Lockfile04Facet {
   return {
     source: { kind: 'registry' as const, registry: 'https://registry.test' },
     version,
     integrity: 'sha256:aaaa',
     assets: [],
+    servers: [],
   }
 }
 
-function lockfile(entries: Array<[string, ReturnType<typeof lockedRegistry>]>): SupportedLockfile {
-  return { lockfileVersion: 0.3, facets: record(entries) } as SupportedLockfile
+function lockfile(entries: Array<[string, Lockfile04Facet]>): SupportedLockfile {
+  return { lockfileVersion: 0.4, facets: record(entries) }
 }
 
 const EMPTY_LOCKFILE = lockfile([])
@@ -103,6 +104,35 @@ function advancing(row: Extract<UpdatePlanRow, { kind: 'candidate' }>): UpdateCh
 // ---------------------------------------------------------------------------
 
 describe('discoverUpdates — classifying resolved facets', () => {
+  // Locked versions are all discovery reads. Every supported format carries
+  // them, so none needs migrating — or its content fetched — to be inspected.
+  test.each([0.2, 0.3, 0.4] as const)('answers identically from a %p lockfile', async (version) => {
+    const entry =
+      version === 0.4
+        ? lockedRegistry('1.2.0')
+        : { source: lockedRegistry('1.2.0').source, version: '1.2.0', integrity: 'sha256:aaaa', assets: [] }
+    const legacy: SupportedLockfile =
+      version === 0.4
+        ? lockfile([['cowsay', lockedRegistry('1.2.0')]])
+        : version === 0.3
+          ? { lockfileVersion: 0.3, facets: record([['cowsay', entry]]) }
+          : { lockfileVersion: 0.2, facets: record([['cowsay', entry]]) }
+    const groups: RegistrySpec[][] = []
+
+    const result = await discoverUpdates({
+      facets: manifest([['cowsay', '1.*']]),
+      lockfile: legacy,
+      resolve: resolverFor({ 'cowsay@1.*': '1.8.0', 'cowsay@latest': '2.0.0' }, { groups }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    const row = result.plan[0]
+    if (row?.kind !== 'candidate') expect.unreachable()
+    expect(row.facet.current).toEqual({ kind: 'exact', major: 1, minor: 2, patch: 0 })
+    // Only metadata was asked for: one batch, version questions only.
+    expect(groups.flat().map(renderSpec).sort()).toEqual(['1.*', 'latest'])
+  })
+
   test('reports current, target and latest for a bounded range', async () => {
     const result = await discoverUpdates({
       facets: manifest([['cowsay', '1.*']]),

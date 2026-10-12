@@ -1,9 +1,17 @@
 import { describe, expect, test } from 'bun:test'
-import type { CurrentLockfile, Lockfile02, Lockfile03 } from '@agent-facets/protocol'
+import type {
+  CurrentLockfile,
+  CurrentLockfileServerEntry,
+  Lockfile02,
+  Lockfile03,
+  Lockfile04,
+  McpServerFingerprint,
+} from '@agent-facets/protocol'
 import {
   CURRENT_LOCKFILE_VERSION,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   preserveLockfileExtensions,
 } from '@agent-facets/protocol'
 
@@ -11,18 +19,21 @@ import {
  * The published contract says unrecognized lockfile fields are preserved.
  * Loading always honored it; rewriting did not, because a producer rebuilds
  * entries from resolved state. These tests pin the rewrite half — including
- * across the mandatory `0.2 → 0.3` migration, which is the case that
- * silently discarded extension data on every install.
+ * across the mandatory migration to `0.4`, which is the case that silently
+ * discarded extension data on every install.
  */
 
 const HASH = `sha256:${'c'.repeat(64)}`
 
 const skillFiles = [{ path: 'skills/review/SKILL.md', integrity: HASH }]
 
-/** A `0.3` document carrying only canonical fields — what a producer builds. */
-function next(overrides: Partial<CurrentLockfile> = {}): CurrentLockfile {
+const FP_A: McpServerFingerprint = `sha256:${'a'.repeat(64)}`
+const FP_B: McpServerFingerprint = `sha256:${'b'.repeat(64)}`
+
+/** A current document carrying only canonical fields — what a producer builds. */
+function next(overrides: Partial<CurrentLockfile> = {}, servers: CurrentLockfileServerEntry[] = []): CurrentLockfile {
   return {
-    lockfileVersion: LOCKFILE_VERSION_0_3,
+    lockfileVersion: LOCKFILE_VERSION_0_4,
     facets: {
       cowsay: {
         source: { kind: 'registry', registry: 'https://cafe.example' },
@@ -37,14 +48,15 @@ function next(overrides: Partial<CurrentLockfile> = {}): CurrentLockfile {
             files: skillFiles,
           },
         ],
+        servers,
       },
     },
     ...overrides,
-  } as CurrentLockfile
+  }
 }
 
 /** The same document as it was loaded, with an extension at every level. */
-function previousWithExtensions(version: number): Lockfile02 | Lockfile03 {
+function previousWithExtensions(version: number): Lockfile02 | Lockfile03 | Lockfile04 {
   const asset: Record<string, unknown> = {
     scope: 'project',
     type: 'skill',
@@ -52,20 +64,20 @@ function previousWithExtensions(version: number): Lockfile02 | Lockfile03 {
     assetNote: 'asset-level',
     files: [{ path: 'skills/review/SKILL.md', integrity: HASH, fileNote: 'file-level' }],
   }
-  if (version === LOCKFILE_VERSION_0_3) asset.materialization = { kind: 'authored' }
+  if (version !== LOCKFILE_VERSION_0_2) asset.materialization = { kind: 'authored' }
+  const facet: Record<string, unknown> = {
+    source: { kind: 'registry', registry: 'https://cafe.example', sourceNote: 'source-level' },
+    version: '1.0.0',
+    integrity: HASH,
+    facetNote: 'facet-level',
+    assets: [asset],
+  }
+  if (version === LOCKFILE_VERSION_0_4) facet.servers = []
   return {
     lockfileVersion: version,
     documentNote: 'document-level',
-    facets: {
-      cowsay: {
-        source: { kind: 'registry', registry: 'https://cafe.example', sourceNote: 'source-level' },
-        version: '1.0.0',
-        integrity: HASH,
-        facetNote: 'facet-level',
-        assets: [asset],
-      },
-    },
-  } as unknown as Lockfile02 | Lockfile03
+    facets: { cowsay: facet },
+  } as unknown as Lockfile02 | Lockfile03 | Lockfile04
 }
 
 /** Read an arbitrary key without pretending the schema declares it. */
@@ -77,6 +89,7 @@ describe('preserveLockfileExtensions', () => {
   test.each([
     LOCKFILE_VERSION_0_2,
     LOCKFILE_VERSION_0_3,
+    LOCKFILE_VERSION_0_4,
   ])('carries extensions at every level through a rewrite (from %p)', (version) => {
     const merged = preserveLockfileExtensions(previousWithExtensions(version), next())
 
@@ -96,7 +109,8 @@ describe('preserveLockfileExtensions', () => {
   test('the new document keeps every canonical value', () => {
     const merged = preserveLockfileExtensions(previousWithExtensions(LOCKFILE_VERSION_0_2), next())
 
-    expect(merged.lockfileVersion).toBe(LOCKFILE_VERSION_0_3)
+    expect(merged.lockfileVersion).toBe(LOCKFILE_VERSION_0_4)
+    expect(merged.facets.cowsay?.servers).toEqual([])
     expect(merged.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
     // The record keeps its canonical fields; the extension rides alongside
     // rather than replacing them.
@@ -218,6 +232,7 @@ describe('preserveLockfileExtensions', () => {
       version: '1.0.0',
       integrity: HASH,
       assets: [],
+      servers: [],
     }
     // Held in a variable rather than written as a literal key: reading
     // `merged.facets.constructor` resolves to `Object.prototype.constructor`
@@ -255,7 +270,13 @@ describe('preserveLockfileExtensions', () => {
     const raw = JSON.stringify({
       lockfileVersion: CURRENT_LOCKFILE_VERSION,
       facets: {
-        PLACEHOLDER: { source: { kind: 'local', path: '../p' }, version: '1.0.0', integrity: HASH, assets: [] },
+        PLACEHOLDER: {
+          source: { kind: 'local', path: '../p' },
+          version: '1.0.0',
+          integrity: HASH,
+          assets: [],
+          servers: [],
+        },
       },
     }).replace('"PLACEHOLDER"', '"__proto__"')
     // Parsed, never written as a literal: `{ __proto__: … }` in source sets
@@ -267,5 +288,123 @@ describe('preserveLockfileExtensions', () => {
     expect(Object.hasOwn(merged.facets, '__proto__')).toBe(true)
     expect(Object.keys(merged.facets)).toEqual(['__proto__'])
     expect(Object.getPrototypeOf(merged.facets)).toBe(Object.prototype)
+  })
+
+  describe('server records', () => {
+    const record = (
+      name: string,
+      fingerprint: McpServerFingerprint,
+      materialization: CurrentLockfileServerEntry['materialization'] = { kind: 'authored' },
+    ): CurrentLockfileServerEntry => ({ name, fingerprint, materialization })
+
+    /** A `0.4` document whose `cowsay` entry carries the given raw server records. */
+    function previous04(servers: unknown[]): Lockfile04 {
+      const base = next()
+      return {
+        ...base,
+        facets: { cowsay: { ...(base.facets.cowsay as object), servers } },
+      } as unknown as Lockfile04
+    }
+
+    test('a retained record keeps its extensions across an alias change, new canonical values winning', () => {
+      const previous = previous04([
+        { name: 'filesystem', fingerprint: FP_A, materialization: { kind: 'authored' }, recordNote: 'kept' },
+      ])
+      const built = next({}, [record('filesystem', FP_B, { kind: 'aliased', as: 'project-fs' })])
+
+      const merged = preserveLockfileExtensions(previous, built)
+
+      const server = merged.facets.cowsay?.servers[0]
+      if (server === undefined) expect.unreachable()
+      expect(extension(server, 'recordNote')).toBe('kept')
+      expect(server.fingerprint).toBe(FP_B)
+      expect(server.materialization).toEqual({ kind: 'aliased', as: 'project-fs' })
+    })
+
+    test('a removed record takes its extensions with it', () => {
+      const previous = previous04([
+        { name: 'filesystem', fingerprint: FP_A, materialization: { kind: 'authored' } },
+        { name: 'gone', fingerprint: FP_B, materialization: { kind: 'authored' }, recordNote: 'should not survive' },
+      ])
+
+      const merged = preserveLockfileExtensions(previous, next({}, [record('filesystem', FP_A)]))
+
+      expect(merged.facets.cowsay?.servers.map((server) => server.name)).toEqual(['filesystem'])
+      expect(JSON.stringify(merged)).not.toContain('should not survive')
+    })
+
+    test.each([
+      LOCKFILE_VERSION_0_2,
+      LOCKFILE_VERSION_0_3,
+    ])('a legacy servers lookalike (from %p) is replaced whole, never promoted', (version) => {
+      // Elements shaped exactly like current records, with extra fields. The
+      // legacy schema defines no such records, so none of it is evidence.
+      const previous = previousWithExtensions(version) as unknown as {
+        facets: Record<string, Record<string, unknown>>
+      }
+      const cowsay = previous.facets.cowsay
+      if (cowsay === undefined) expect.unreachable()
+      cowsay.servers = [
+        {
+          name: 'filesystem',
+          fingerprint: FP_A,
+          materialization: { kind: 'authored' },
+          legacyNote: 'should not survive',
+        },
+      ]
+
+      const merged = preserveLockfileExtensions(
+        previous as unknown as Lockfile02 | Lockfile03,
+        next({}, [record('filesystem', FP_B)]),
+      )
+
+      expect(merged.facets.cowsay?.servers).toEqual([record('filesystem', FP_B)])
+      expect(JSON.stringify(merged)).not.toContain('should not survive')
+      // Unrelated retained extensions still ride along.
+      const facet = merged.facets.cowsay
+      if (facet === undefined) expect.unreachable()
+      expect(extension(facet, 'facetNote')).toBe('facet-level')
+    })
+
+    test('a legacy servers lookalike is replaced even when the new inventory is empty', () => {
+      const previous = previousWithExtensions(LOCKFILE_VERSION_0_3) as unknown as {
+        facets: Record<string, Record<string, unknown>>
+      }
+      const cowsay = previous.facets.cowsay
+      if (cowsay === undefined) expect.unreachable()
+      cowsay.servers = [{ name: 'phantom', fingerprint: FP_A, materialization: { kind: 'authored' } }]
+
+      const merged = preserveLockfileExtensions(previous as unknown as Lockfile03, next())
+
+      expect(merged.facets.cowsay?.servers).toEqual([])
+    })
+
+    test('record extensions are matched within a facet, never across facets', () => {
+      const previous = {
+        lockfileVersion: LOCKFILE_VERSION_0_4,
+        facets: {
+          // Retained, but recorded no server: nothing of its own to carry.
+          cowsay: { ...next().facets.cowsay },
+          other: {
+            source: { kind: 'local', path: '../other' },
+            version: '1.0.0',
+            integrity: HASH,
+            assets: [],
+            servers: [
+              {
+                name: 'filesystem',
+                fingerprint: FP_A,
+                materialization: { kind: 'authored' },
+                recordNote: 'should not survive',
+              },
+            ],
+          },
+        },
+      } as unknown as Lockfile04
+
+      const merged = preserveLockfileExtensions(previous, next({}, [record('filesystem', FP_A)]))
+
+      expect(JSON.stringify(merged)).not.toContain('should not survive')
+    })
   })
 })

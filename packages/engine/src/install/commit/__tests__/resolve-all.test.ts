@@ -172,3 +172,52 @@ describe('resolveAll — git server-inventory reconciliation', () => {
     expect((await resolve(matching)).ok).toBe(true)
   })
 })
+
+describe('resolveAll — the previous server inventory outcome classification may trust', () => {
+  test('a 0.4 entry carries its recorded inventory forward', async () => {
+    const record = await firstResolution()
+    const fingerprint = computeMcpServerFingerprint(STDIO)
+
+    const result = await resolve(lock04(record, fingerprint))
+
+    if (!result.ok) expect.unreachable()
+    expect(result.value.resolved[0]?.previousServers).toEqual([
+      { name: 'filesystem', fingerprint, materialization: { kind: 'authored' } },
+    ])
+  })
+
+  test('a fresh facet has no recorded inventory', async () => {
+    const record = await firstResolution()
+    expect(record.previousServers).toBeUndefined()
+  })
+
+  // The version tag decides whether an inventory exists, never the presence
+  // of a member. A legacy document can carry `servers` as an unrecognized
+  // field — a relabelled `0.4`, for one — and that is not a record of intent.
+  test('a legacy entry carrying a servers field still has no recorded inventory', async () => {
+    const record = await firstResolution()
+    const legacy = parse({
+      lockfileVersion: 0.3,
+      facets: {
+        [FACET]: {
+          source: record.source,
+          version: record.version,
+          integrity: record.integrity,
+          assets: record.plan.assets.map((asset) => ({ ...asset, materialization: { kind: 'authored' } })),
+          servers: [
+            {
+              name: 'filesystem',
+              fingerprint: computeMcpServerFingerprint(STDIO),
+              materialization: { kind: 'aliased', as: 'fs' },
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await resolve(legacy)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.value.resolved[0]?.previousServers).toBeUndefined()
+  })
+})

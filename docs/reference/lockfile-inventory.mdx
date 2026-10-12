@@ -1,0 +1,132 @@
+---
+title: Lockfile Inventory
+description: Derive MCP provenance from facets.lock
+---
+
+Public functions in [`@agent-facets/protocol`](https://www.npmjs.com/package/@agent-facets/protocol) for reading the MCP server inventory a [`0.4` lockfile](/specification/lockfile#server-inventory) records. They run on Node 22 or newer, need no Bun, and read no file, cache, archive, network, server, or adapter. Every expected outcome is a returned value, not a thrown error.
+
+## Parse first
+
+Derivation takes a validated document, never raw bytes. Parse with `parseLockfileDocument`, which dispatches on the exact `lockfileVersion` and returns `{ ok: true, data }` or `{ ok: false, failure }`.
+
+```ts
+import { deriveLockedMcpInventory, parseLockfileDocument } from '@agent-facets/protocol'
+
+const parsed = parseLockfileDocument(lockfileBytes)
+if (!parsed.ok) throw new Error(`unreadable facets.lock: ${parsed.failure.code}`)
+const inventory = deriveLockedMcpInventory(parsed.data.lockfile)
+```
+
+## deriveLockedMcpInventory
+
+<ResponseField name="deriveLockedMcpInventory(lockfile)" type="DeriveLockedMcpInventoryResult">
+  Describes the inventory the lockfile records, under the same naming, alias, omission, and composition rules as [materialization](/specification/materialization). It takes no project-manifest overrides: the result is what the lockfile says, not what a changed `facets.json` would produce.
+</ResponseField>
+
+The result has three arms.
+
+<ResponseField name="{ ok: true, authored, servers }" type="success">
+  `authored` lists every recorded server, omitted ones included, ordered by facet then authored name. `servers` is the selected set in portable identity order. Both are empty for a `0.4` lockfile with no servers.
+</ResponseField>
+
+<ResponseField name="{ ok: false, reason: 'inventory-unavailable', lockfileVersion, requiredVersion }" type="legacy format">
+  The document is `0.2` or `0.3`, which record no server inventory. `requiredVersion` is `0.4`. This is returned even for an empty legacy document or one carrying an unrecognized `servers` field, so a legacy lockfile never reads as an empty inventory.
+</ResponseField>
+
+<ResponseField name="{ ok: false, reason: 'collision', authored, groups }" type="conflict">
+  Two or more different fingerprints claim one effective name. `groups` names every conflicting claimant with its fingerprint, and `authored` is still complete. No selected set is returned, not even the servers outside the conflict.
+</ResponseField>
+
+### Authored and selected views
+
+<ResponseField name="LockedMcpAuthoredServer" type="authored record">
+  `facet`, `source`, `version`, `facetIntegrity`, `authoredName`, `fingerprint`, and the recorded `materialization` (all three arms). One per record in the lockfile.
+</ResponseField>
+
+<ResponseField name="LockedMcpServer" type="selected server">
+  `effectiveName`, `fingerprint`, and `origins`, a non-empty list of every active claim. Each origin is `{ facet, source, version, facetIntegrity, authoredName, materialization }`, ordered by facet then authored name.
+</ResponseField>
+
+Identical declarations claiming one effective name produce one selected server that keeps every origin, including two authored names from the same facet. No origin is a winner. Equal fingerprints under different effective names stay separate servers. An omitted record appears in `authored` and never in `origins`.
+
+Output is readonly and copied. It shares no array, disposition, or source object with the input, and it carries only the fields listed here: unrecognized lockfile fields never appear in it.
+
+## planLockedServerInventory
+
+<ResponseField name="planLockedServerInventory(contributions)" type="PlanLockedServerInventoryResult">
+  Plans hypothetical intent over fingerprint-only inventories. Each contribution is `{ facet, servers: [{ name, fingerprint }], overrides? }`, where `overrides` uses the [`facets.json` materialization shape](/specification/materialization#recording-intent). Use it to ask what a manifest's intent would select from recorded inventories.
+</ResponseField>
+
+A missing override means authored materialization, never "keep the alias another document recorded". A facet with no servers still takes part, so an override naming an absent server is reported as stale.
+
+- `{ ok: true, planned, configurations, staleOverrides }`: `planned` lists every server with its resolved disposition, omitted ones included. `configurations` lists each selected identity with all its claimants.
+- `{ ok: false, reason: 'invalid-alias', problems }`: an alias breaks the server name grammar.
+- `{ ok: false, reason: 'collision', groups, staleOverrides }`: different fingerprints claim one effective name. Stale overrides are still reported.
+
+Planning from fingerprints asserts nothing about whether they match any content.
+
+## Verify exported servers
+
+An exporter that wrote portable MCP declarations can check them against a committed lockfile. Derive what the lockfile selects, fingerprint each declaration you actually exported, and compare the two complete sets. The comparison is yours to own: the package publishes derivation and fingerprinting, not a comparison function.
+
+```ts verify-exports.ts expandable
+import {
+  computeMcpServerFingerprint,
+  deriveLockedMcpInventory,
+  type McpServerDeclaration,
+  parseLockfileDocument,
+} from '@agent-facets/protocol'
+
+type Comparison =
+  | { ok: true }
+  | { ok: false; reason: 'unreadable' | 'inventory-unavailable' | 'collision' }
+  | { ok: false; reason: 'mismatch'; missing: string[]; unexpected: string[]; changed: string[] }
+
+/** `exported` maps each effective name you wrote to the declaration you wrote under it. */
+export function compareExports(
+  lockfileText: string,
+  exported: Readonly<Record<string, McpServerDeclaration>>,
+): Comparison {
+  const parsed = parseLockfileDocument(lockfileText)
+  if (!parsed.ok) return { ok: false, reason: 'unreadable' }
+  const inventory = deriveLockedMcpInventory(parsed.data.lockfile)
+  if (!inventory.ok) return { ok: false, reason: inventory.reason }
+
+  const expected = new Map(inventory.servers.map((server) => [server.effectiveName, server.fingerprint]))
+  // Recompute from what was exported. Copying the expected fingerprint would compare nothing.
+  const observed = new Map(
+    Object.entries(exported).map(([name, declaration]) => [name, computeMcpServerFingerprint(declaration)]),
+  )
+
+  const missing = [...expected.keys()].filter((name) => !observed.has(name)).sort()
+  const unexpected = [...observed.keys()].filter((name) => !expected.has(name)).sort()
+  const changed = [...expected]
+    .filter(([name, fingerprint]) => observed.has(name) && observed.get(name) !== fingerprint)
+    .map(([name]) => name)
+    .sort()
+
+  if (missing.length + unexpected.length + changed.length === 0) return { ok: true }
+  return { ok: false, reason: 'mismatch', missing, unexpected, changed }
+}
+```
+
+Given a lockfile whose `filesystem` server is aliased to `workspace-files`, and whose `docs` server is authored:
+
+| Exports | Result |
+| --- | --- |
+| `workspace-files` and `docs`, as declared | `{ ok: true }` |
+| `workspace-files` with its arguments reordered | `changed: ['workspace-files']` |
+| `workspace-files` only | `missing: ['docs']` |
+| both, plus `extra` | `unexpected: ['extra']` |
+| `filesystem` instead of `workspace-files` | `missing: ['workspace-files']`, `unexpected: ['filesystem']` |
+| anything, against a `0.3` lockfile | `reason: 'inventory-unavailable'` |
+
+Reordering environment assignments is not a change, because the [canonical fingerprint](/specification/manifest#canonical-declaration-fingerprint) sorts them.
+
+## What agreement proves
+
+Agreement proves your exports match a lockfile you already trust. It does not prove the lockfile is authentic, that a declaration came from a particular archive, that anything was installed into a tool, or that any machine approved a server. A derived inventory is not an ownership record.
+
+<Warning>
+  A fingerprint is a hash over literal declaration values, including environment values. Anyone with the lockfile can test guesses for a low-entropy value offline. Keep secrets out of declarations. See [Disclosure](/specification/lockfile#disclosure).
+</Warning>

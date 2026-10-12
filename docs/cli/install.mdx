@@ -140,13 +140,40 @@ A `servers` group needs `"manifestVersion": 0.2`, which a successful non-frozen 
 
 Frozen mode never prompts, even in a terminal, because it reproduces recorded intent rather than collecting new decisions. A collision fails, and MCP configuration needing approval fails unless you also pass `--accept-mcp`.
 
-A `0.2` lockfile has no field for a text-asset disposition, so a frozen run fails if `facets.json` declares one. Run a plain `facet install` once to migrate the lockfile. A `servers` override never causes this, because no lockfile version records server intent.
+With a `0.4` lockfile, server intent is checked against the recorded inventory before anything is downloaded. A server collision, a `servers` override naming a server the facet does not declare, or a server alias or omission that differs from the lockfile fails at once. Removing an alias from `facets.json` counts as a change, not as keeping it.
+
+An older lockfile cannot record every choice, so a frozen run refuses when `facets.json` declares one it cannot hold:
+
+- `0.2` cannot record any alias or omission. A text-asset choice needs `0.3`, and a server choice needs `0.4`.
+- `0.3` records text-asset choices but not server choices, which need `0.4`.
+
+The required version in the message is the oldest format able to record the choice. A plain `facet install` always writes `0.4`. See [Migrating the lockfile](#migrating-the-lockfile). Without any server override, an older lockfile still reproduces, and is not migrated.
+
+Passing these checks does not skip the rest. Every facet is still verified against its locked integrity and server inventory, native configuration is still validated, and approval is still required.
 
 Frozen mode reads `manifestVersion` `0.2`, `0.1`, and unversioned documents and migrates none of them. A stale `servers` override is reported as drift and is not removed.
 
 <Tip>
   Use this in CI to prove `facets.json` and `facets.lock` agree, the same way `--frozen-lockfile` works in npm and bun.
 </Tip>
+
+### Migrating the lockfile
+
+A plain `facet install` writes lockfile `0.4`, which records every facet's MCP servers by name and fingerprint. CLIs released before `0.4` cannot read it, so migrate deliberately:
+
+<Steps>
+  <Step title="Upgrade every CLI that shares the project">
+    Teammates and CI run [`facet self-update`](/cli/self-update) first.
+  </Step>
+  <Step title="Run a normal install">
+    `facet install` verifies every facet and records its servers from the verified content. Approval works as usual, so pass `--accept-mcp` in a non-interactive shell. The lockfile is written only if the whole install succeeds.
+  </Step>
+  <Step title="Review and commit">
+    Commit `facets.lock`, together with `facets.json` if it changed. Frozen CI runs then use the new format.
+  </Step>
+</Steps>
+
+Lockfile downgrades are not supported. Do not change `lockfileVersion` to make an older CLI accept the file; changing the version number does not convert its contents.
 
 ### Cache
 
@@ -241,10 +268,16 @@ On both surfaces values are quoted and escaped, such as `"srv" "--root" "/w"` an
     **Fix:** if it declares `1`, delete `facets.lock` and run `facet install` to regenerate it. If it declares something newer, run `facet self-update` instead, because deleting a newer lockfile discards resolutions your teammates committed.
   </Accordion>
 
-  <Accordion title="lockfile v0.2 cannot record materialization overrides">
-    **Cause:** `facets.json` declares an alias or omission for a text asset, and the lockfile is still at `0.2`, which has no field for it. A [frozen install](#frozen-lockfile) refuses rather than ignore your intent.
+  <Accordion title="lockfile cannot record materialization overrides">
+    **Cause:** `facets.json` declares an alias or omission the lockfile's format has no field for: any choice under `0.2`, or a server choice under `0.3`. A [frozen install](#frozen-lockfile) refuses rather than ignore your intent. The `(needs vX)` in the message is the oldest format able to record it, not the version an install writes.
 
-    **Fix:** run one plain `facet install` to migrate the lockfile, then commit it.
+    **Fix:** [migrate the lockfile](#migrating-the-lockfile) with one plain `facet install`, which writes `0.4`, then commit it.
+  </Accordion>
+
+  <Accordion title="facets.lock records different server metadata than the verified content">
+    **Cause:** a facet reproduced its locked integrity, but its recorded server names or fingerprints disagree with what it declares. This is damaged lockfile metadata, not a format to migrate.
+
+    **Fix:** see [server metadata disagrees with the facet](/guides/troubleshooting). Re-running does not repair it.
   </Accordion>
 
   <Accordion title="facets.json and the lockfile disagree under a frozen install">

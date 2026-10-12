@@ -108,6 +108,11 @@
             "group": "Adapter Development",
             "icon": "wrench",
             "pages": ["guides/custom-adapters", "reference/adapter-sdk"]
+          },
+          {
+            "group": "Protocol API",
+            "icon": "code",
+            "pages": ["reference/lockfile-inventory"]
           }
         ]
       },

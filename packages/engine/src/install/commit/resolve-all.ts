@@ -1,5 +1,11 @@
 import type { Adapter } from '@agent-facets/adapter'
-import { compareCodeUnits, type SupportedLockfile, type SupportedLockfileFacet } from '@agent-facets/protocol'
+import {
+  compareCodeUnits,
+  LOCKFILE_VERSION_0_4,
+  type Lockfile04ServerEntry,
+  type SupportedLockfile,
+  type SupportedLockfileFacet,
+} from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry } from '../own-entry.ts'
 import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
@@ -22,6 +28,17 @@ import type { ResolvedFacet } from './types.ts'
 export interface ResolvedFacetRecord extends ResolvedFacet {
   facet: string
   previousEntry: SupportedLockfileFacet | undefined
+  /**
+   * The server inventory the previous lockfile recorded for this facet, or
+   * `undefined` when there is none to trust: no previous entry, or a document
+   * whose version cannot record one. Decided on the version tag, so a legacy
+   * entry carrying a `servers` member as an unrecognized field is still
+   * `undefined`. An empty array is a recorded inventory with no servers.
+   *
+   * Project intent only. It never stands in for this machine's receipt as
+   * evidence of what was configured or approved.
+   */
+  previousServers: readonly Lockfile04ServerEntry[] | undefined
 }
 
 export interface ResolveAllSuccess {
@@ -136,7 +153,11 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
       return { ok: false, failure: serverMismatch }
     }
 
-    resolved.push({ ...facetResolution, facet: facetName, previousEntry })
+    const previousServers =
+      previousLockfile.lockfileVersion === LOCKFILE_VERSION_0_4
+        ? ownEntry(previousLockfile.facets, facetName)?.servers
+        : undefined
+    resolved.push({ ...facetResolution, facet: facetName, previousEntry, previousServers })
   }
 
   return { ok: true, value: { resolved } }

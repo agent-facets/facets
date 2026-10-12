@@ -17,7 +17,12 @@ import type {
   StageEvent,
   UpdateSelectionFailure,
 } from '@agent-facets/engine'
-import { LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
+import {
+  LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
+  type Lockfile03Facet,
+  type Lockfile04Facet,
+} from '@agent-facets/protocol'
 import { Box, Text, useApp, useStderr } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
@@ -872,9 +877,10 @@ interface AssetCounts {
  *
  * `effectiveName: null` means omitted. Carries its own `key` and `label`
  * because assets and servers now share this list and come from different
- * places: an asset's disposition is in the lockfile, while a server's is
- * deliberately not — so keying by asset type alone let a server named like
- * a skill collide with it in the rendered list.
+ * places: an asset's disposition is read from the lockfile, while a server's
+ * comes from what this run planned and reconciled — a locked server record
+ * says nothing about this machine — so keying by asset type alone let a
+ * server named like a skill collide with it in the rendered list.
  */
 interface MaterializationNote {
   key: string
@@ -884,16 +890,21 @@ interface MaterializationNote {
   effectiveName: string | null
 }
 
-/** Asset dispositions, which only a current lockfile can express. */
+/** Asset dispositions, which only a disposition-bearing lockfile can express. */
 function assetMaterializationNotes(result: RunInstallResult & { ok: true }): AssetNote[] {
-  // Legacy lockfiles cannot express an alias or an omission, so there is
+  // A `0.2` lockfile cannot express an alias or an omission, so there is
   // nothing to report — not "nothing happened", but "this format has no
   // opinion". Frozen mode returns the lockfile it read, so this branch is
-  // reachable in normal use, not just during migration.
-  if (result.lockfile.lockfileVersion !== LOCKFILE_VERSION_0_3) return []
+  // reachable in normal use, not just during migration. Narrowed on the
+  // exact version tag: `0.3` and `0.4` both record asset dispositions, and
+  // "not the writer version" is not the same question.
+  const lockfile = result.lockfile
+  if (lockfile.lockfileVersion !== LOCKFILE_VERSION_0_3 && lockfile.lockfileVersion !== LOCKFILE_VERSION_0_4) {
+    return []
+  }
 
   const notes: AssetNote[] = []
-  for (const [facet, entry] of Object.entries(result.lockfile.facets)) {
+  for (const [facet, entry] of Object.entries<Lockfile03Facet | Lockfile04Facet>(lockfile.facets)) {
     for (const asset of entry.assets) {
       if (asset.materialization.kind === 'authored') continue
       notes.push({
