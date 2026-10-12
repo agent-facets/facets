@@ -674,6 +674,27 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
               ))}
             </Box>
           ))}
+          {/* Frozen mode reports stale intent rather than pruning it, so these
+              choices are still in facets.json — say so, or the list reads as
+              though they had been cleaned up. */}
+          {failure.staleOverrides.length > 0 && (
+            <Box flexDirection="column">
+              <Text>
+                {' '}
+                Also note: these choices in facets.json name contributions the locked content does not contain (they
+                were NOT removed):
+              </Text>
+              {failure.staleOverrides.map((stale) => (
+                <Text
+                  key={`${stale.facet}:${contributionKey(stale.contribution)}:${stale.authoredName}`}
+                  color={THEME.hint}
+                >
+                  {'   '}
+                  {stale.facet}: {describeContribution(stale.contribution)} “{stale.authoredName}”
+                </Text>
+              ))}
+            </Box>
+          )}
           <Text color={THEME.hint}>
             {' '}
             Nothing was fetched. Choose names in a normal install (without --frozen-lockfile), which records them.

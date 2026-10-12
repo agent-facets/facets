@@ -1,5 +1,6 @@
 import {
   type CurrentLockfileFacet,
+  type Lockfile04ServerEntry,
   lockedDispositionOf,
   type SupportedLockfileFacet,
   sameDisposition,
@@ -30,13 +31,37 @@ function dispositionsChanged(previous: SupportedLockfileFacet, current: CurrentL
 }
 
 /**
+ * Whether the project's intent for this facet's servers changed, judged
+ * against the inventory the previous lockfile recorded.
+ *
+ * Same shape as {@link dispositionsChanged}: only authored names present in
+ * both inventories are compared, because a changed declaration SET is a
+ * content change rather than a change of mind. `undefined` means no inventory
+ * can be trusted, which proves nothing either way.
+ */
+function serverDispositionsChanged(
+  previous: readonly Lockfile04ServerEntry[] | undefined,
+  current: CurrentLockfileFacet,
+): boolean {
+  if (previous === undefined) return false
+  const before = new Map(previous.map((server) => [server.name, server.materialization]))
+  for (const server of current.servers) {
+    const prior = before.get(server.name)
+    if (prior === undefined) continue
+    if (!sameDisposition(prior, server.materialization)) return true
+  }
+  return false
+}
+
+/**
  * What reconciling one facet's MCP declarations amounted to.
  *
  * Two independent booleans rather than one status, because they answer
  * different questions and can both be true: the project can change what it
  * asks for at the same moment a tool's config file turns out to have drifted.
- * Neither can be derived from the lockfile — servers are deliberately absent
- * from it — so both arrive from the MCP outcomes.
+ * Both arrive from the MCP outcomes, which judge intent against this
+ * machine's receipt. The lockfile's own record of server intent is compared
+ * separately, in {@link classifyOutcome}.
  */
 export interface FacetConfigurationWork {
   /**
@@ -111,8 +136,12 @@ export function facetConfigurationWork(mcp: McpInstallOutcomes): Map<string, Fac
  *   - `unchanged` — same version, same intent, nothing written.
  *
  * A facet that publishes only servers reaches the same four answers on the
- * strength of `configuration` alone, which is what keeps it from reporting
- * itself as a no-op every time.
+ * strength of `configuration` and `previousServers`, which is what keeps it
+ * from reporting itself as a no-op every time.
+ *
+ * `previousServers` is the inventory a `0.4` lockfile recorded, and lets a
+ * changed alias or omission read as `updated` even when this machine's
+ * receipt is missing, unreadable, or too old to say what it configured.
  */
 export function classifyOutcome(
   name: string,
@@ -120,6 +149,7 @@ export function classifyOutcome(
   current: CurrentLockfileFacet,
   assetsWritten: number,
   configuration: FacetConfigurationWork = NO_CONFIGURATION_WORK,
+  previousServers: readonly Lockfile04ServerEntry[] | undefined = undefined,
 ): FacetOutcome {
   if (previous === undefined) {
     return { kind: 'installed', name, version: current.version }
@@ -132,7 +162,11 @@ export function classifyOutcome(
       newVersion: current.version,
     }
   }
-  if (dispositionsChanged(previous, current) || configuration.intentChanged) {
+  if (
+    dispositionsChanged(previous, current) ||
+    serverDispositionsChanged(previousServers, current) ||
+    configuration.intentChanged
+  ) {
     return {
       kind: 'updated',
       name,

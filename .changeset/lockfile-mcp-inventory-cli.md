@@ -2,7 +2,7 @@
 "agent-facets": minor
 ---
 
-**Breaking:** `facet install`, `add`, `update`, and `remove` now write lockfile `0.4`, which records every facet's MCP servers by name, fingerprint, and alias or omission. Earlier CLIs cannot read it. Upgrade every CLI that shares a project, then run one plain `facet install` to migrate and commit `facets.lock`. To go back, restore the previously committed `facets.json` and `facets.lock` pair rather than editing the version.
+**Breaking:** `facet install`, `add`, `update`, and `remove` now write lockfile `0.4`, which records every facet's MCP servers by name, fingerprint, and alias or omission. Earlier CLIs cannot read it. Upgrade every CLI that shares a project, then run one plain `facet install` to migrate and commit `facets.lock`.
 
 `facet install --frozen-lockfile` now checks server intent before downloading anything. With a `0.4` lockfile, a server collision, a stale server override, or a server alias or omission that differs from the lockfile fails immediately. With a `0.2` or `0.3` lockfile, any server alias or omission is refused with a request to migrate. The message names the format that can record the choice (`0.3` for a text-asset choice under `0.2`, `0.4` for a server choice), while a normal install always writes `0.4`. Older lockfiles without server overrides still reproduce unchanged.
 

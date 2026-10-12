@@ -336,6 +336,135 @@ describe('runRemove — a remaining facet is unavailable', () => {
     expect(files()).toEqual(before)
   })
 
+  type ReceiptCondition = 'missing' | 'corrupt' | 'path-mismatch' | 'pre-configuration'
+
+  /** Leave this machine's receipt unable to witness configuration, one way per condition. */
+  async function degradeReceipt(condition: ReceiptCondition): Promise<void> {
+    const { receiptPath } = await import('../receipt.ts')
+    const path = receiptPath(projectRoot)
+    switch (condition) {
+      case 'missing':
+        rmSync(path, { force: true })
+        return
+      case 'corrupt':
+        writeFileSync(path, 'not json{')
+        return
+      case 'path-mismatch':
+        writeFileSync(path, JSON.stringify({ version: 0.3, path: '/some/other/project', facets: {} }))
+        return
+      case 'pre-configuration': {
+        // The receipt version that cannot express a configuration claim.
+        const receipt = JSON.parse(readFileSync(path, 'utf8'))
+        receipt.version = 0.3
+        for (const facet of Object.values(receipt.facets) as Array<Record<string, unknown>>) {
+          delete facet.configurations
+          delete facet.integrity
+        }
+        writeFileSync(path, JSON.stringify(receipt, null, 2))
+      }
+    }
+  }
+
+  /** Every project and machine file a failed removal must leave byte-for-byte alone. */
+  async function snapshot(): Promise<Record<string, string | null>> {
+    const { receiptPath } = await import('../receipt.ts')
+    const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+    return {
+      manifest: read(join(projectRoot, 'facets.json')),
+      lockfile: read(join(projectRoot, 'facets.lock')),
+      receipt: read(receiptPath(projectRoot)),
+      removed: read(assetPath('test-adapter', 'cowsay')),
+      remaining: read(assetPath('test-adapter', 'planner')),
+    }
+  }
+
+  // The receipt checks run before the inventory check, so a machine that
+  // cannot witness its own state never reaches the refinement reason that
+  // names the migration. The removal still needed verified content to write
+  // `0.4`, and a failure to get it has to say so.
+  test.each([
+    [0.2, 'missing', 'receipt-unwitnessable'],
+    [0.2, 'corrupt', 'receipt-unwitnessable'],
+    [0.2, 'path-mismatch', 'receipt-unwitnessable'],
+    [0.2, 'pre-configuration', 'configuration-unwitnessed'],
+    [0.3, 'missing', 'receipt-unwitnessable'],
+    [0.3, 'corrupt', 'receipt-unwitnessable'],
+    [0.3, 'path-mismatch', 'receipt-unwitnessable'],
+    [0.3, 'pre-configuration', 'configuration-unwitnessed'],
+  ] as const)('a %p-locked removal with a %s receipt keeps the migration context', async (version, condition, reason) => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    downgradeLockfile(version)
+    await degradeReceipt(condition)
+    const before = await snapshot()
+    goOffline()
+
+    const events: StageEvent[] = []
+    const result = await remove(['cowsay'], (event) => events.push(event))
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    // The refinement's own reason is unchanged: the receipt still stopped it first.
+    expect(events).toContainEqual({ kind: 'removal-resolution-required', reason })
+    expect(result.install.removalMigration).toEqual({
+      reason: 'remaining-server-inventory-unavailable',
+      lockfileVersion: version,
+      requiredVersion: 0.4,
+    })
+    expect(result.install.failure.code).toBe('REGISTRY_ERROR')
+    expect(result.install.rollback.kind).toBe('not-needed')
+    expect(await snapshot()).toEqual(before)
+  })
+
+  test('a current-format removal that cannot resolve carries no migration context', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    await degradeReceipt('missing')
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(result.install.failure.code).toBe('REGISTRY_ERROR')
+    expect(result.install.removalMigration).toBeUndefined()
+  })
+
+  test('a removal with no lockfile that cannot resolve carries no migration context', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    rmSync(join(projectRoot, 'facets.lock'), { force: true })
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(result.install.failure.code).toBe('REGISTRY_ERROR')
+    expect(result.install.removalMigration).toBeUndefined()
+  })
+
+  test('an add under a legacy lockfile that cannot resolve carries no migration context', async () => {
+    await installFacet('cowsay', '0.1.1')
+    downgradeLockfile(0.3)
+    goOffline()
+
+    const parsed = parseFacetSource('planner@0.2.0')
+    if (!parsed.ok) expect.unreachable()
+    const loadResult = await loadInstalledAdapters()
+    if (!loadResult.ok) expect.unreachable()
+    const result = await runAdd({
+      projectRoot,
+      sources: [{ specifier: 'planner@0.2.0', source: parsed.value }],
+      adapters: loadResult.adapters.filter((a) => a.assets !== false),
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(result.install.failure.code).toBe('REGISTRY_ERROR')
+    expect(result.install.removalMigration).toBeUndefined()
+  })
+
   test.each([
     0.2, 0.3,
   ] as const)('a %p-locked removal migrates once its remaining content is reachable', async (version) => {

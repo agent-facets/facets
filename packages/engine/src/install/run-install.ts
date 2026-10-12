@@ -1,7 +1,13 @@
 import { join } from 'node:path'
 import { fileStatesEqual, isNonEmpty } from '@agent-facets/common'
-import type { PlannedServerConfiguration } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_4, preserveLockfileExtensions } from '@agent-facets/protocol'
+import type { PlannedServerConfiguration, SupportedLockfile } from '@agent-facets/protocol'
+import {
+  CURRENT_LOCKFILE_VERSION,
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
+  preserveLockfileExtensions,
+} from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { batchResidue, FileTransaction, NO_ROLLBACK } from '../fs/index.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
@@ -53,6 +59,7 @@ import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type {
   FacetOutcome,
   InstallOperation,
+  RemovalMigrationContext,
   RunInstallFailure,
   RunInstallOptions,
   RunInstallResult,
@@ -86,6 +93,28 @@ function interactionsOf(operation: InstallOperation): {
     mcpConsent: operation.mcpConsent ?? { kind: 'unavailable' },
     resolveAssetTakeover: operation.resolveAssetTakeover,
   }
+}
+
+/**
+ * Why a removal had to resolve its remaining facets, when the reason is that
+ * their lockfile predates server inventory.
+ *
+ * Derived from the request and the loaded documents rather than from the
+ * refinement's reason: a missing or pre-configuration receipt stops the
+ * refinement before it ever reaches the inventory check, yet the removal
+ * still needs verified content to write `0.4`.
+ */
+function removalMigrationOf(
+  operation: InstallOperation,
+  lockfileExisted: boolean,
+  previousLockfile: SupportedLockfile,
+  desiredFacets: Readonly<Record<string, unknown>>,
+): RemovalMigrationContext | undefined {
+  if (operation.kind !== 'remove' || !lockfileExisted) return undefined
+  if (Object.keys(desiredFacets).length === 0) return undefined
+  const { lockfileVersion } = previousLockfile
+  if (lockfileVersion !== LOCKFILE_VERSION_0_2 && lockfileVersion !== LOCKFILE_VERSION_0_3) return undefined
+  return { reason: 'remaining-server-inventory-unavailable', lockfileVersion, requiredVersion: LOCKFILE_VERSION_0_4 }
 }
 
 /**
@@ -512,20 +541,13 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // inventory would otherwise report, say, an unreachable registry with no
       // hint of why a removal needed one. The cause stays the failure; this
       // only says why resolution ran.
-      if (
-        !failed.ok &&
-        refinement?.kind === 'not-applicable' &&
-        refinement.reason.code === 'remaining-server-inventory-unavailable'
-      ) {
-        return {
-          ...failed,
-          removalMigration: {
-            reason: 'remaining-server-inventory-unavailable',
-            lockfileVersion: refinement.reason.lockfileVersion,
-            requiredVersion: LOCKFILE_VERSION_0_4,
-          },
-        }
-      }
+      const removalMigration = removalMigrationOf(
+        operation,
+        lockfileResult.existed,
+        previousLockfile,
+        merged.desiredFacets,
+      )
+      if (!failed.ok && removalMigration !== undefined) return { ...failed, removalMigration }
       return failed
     }
     const { resolved } = resolution.value
@@ -842,6 +864,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         composedEntry,
         assetWrites.get(record.facet) ?? 0,
         configurationWork.get(record.facet) ?? NO_CONFIGURATION_WORK,
+        record.previousServers,
       )
       perFacet.push(outcome)
       onStage({ kind: 'facet-success', facet: record.facet, outcome })

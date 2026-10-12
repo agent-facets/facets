@@ -339,6 +339,112 @@ describe('mcp outcomes — evidence this machine does not have', () => {
   })
 })
 
+// The receipt is this machine's evidence; the lockfile is the project's. When
+// the first cannot speak, a changed alias or omission is still a change the
+// second records, and the facet reports it as one. The per-declaration status
+// keeps saying what THIS machine can prove.
+describe('mcp outcomes — a changed server choice the receipt cannot witness', () => {
+  type Degradation = 'missing' | 'corrupt' | 'pre-configuration'
+
+  function degradeReceipt(how: Degradation): void {
+    const path = receiptPath(projectRoot)
+    if (how === 'missing') {
+      rmSync(path, { force: true })
+      return
+    }
+    if (how === 'corrupt') {
+      writeFileSync(path, 'not json{')
+      return
+    }
+    const receipt = JSON.parse(readFileSync(path, 'utf8'))
+    receipt.version = 0.3
+    for (const facet of Object.values(receipt.facets) as Array<Record<string, unknown>>) {
+      delete facet.configurations
+      delete facet.integrity
+    }
+    writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`)
+  }
+
+  function choose(source: string, disposition: Record<string, unknown>): void {
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { alpha: { source, materialization: { servers: { filesystem: disposition } } } },
+    })
+  }
+
+  const UPDATED = { kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' } as const
+
+  test.each([
+    ['missing', 'unchanged'],
+    ['corrupt', 'unwitnessed'],
+    ['pre-configuration', 'unwitnessed'],
+  ] as const)('omitting a server with a %s receipt is updated, with nothing written', async (how, change) => {
+    const source = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: source } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+    const nativeBefore = readFileSync(rec.documentPath, 'utf8')
+
+    degradeReceipt(how)
+    choose(source, { kind: 'omitted' })
+    const { result, events } = await install({ adapters: [rec.adapter] })
+    const success = succeeded(result)
+
+    expect(success.perFacet).toEqual([UPDATED])
+    expect(success.summary.facets.updated).toBe(1)
+    expect(events).toContainEqual({ kind: 'facet-success', facet: 'alpha', outcome: UPDATED })
+    // The declaration-level account is still the receipt's, unchanged.
+    expect(success.mcp.dispositions).toEqual([{ kind: 'omitted', facet: 'alpha', authoredName: 'filesystem', change }])
+    // Ownership is still the receipt's too: an entry this machine cannot
+    // prove it wrote is not deleted on the lockfile's word.
+    expect(success.summary.mcp.configurations.removed).toBe(0)
+    expect(readFileSync(rec.documentPath, 'utf8')).toBe(nativeBefore)
+  })
+
+  test.each([
+    ['missing', 'unrecorded'],
+    ['corrupt', 'unwitnessed'],
+    ['pre-configuration', 'unwitnessed'],
+  ] as const)('aliasing a server with a %s receipt is updated rather than repaired', async (how, change) => {
+    const source = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: source } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+
+    degradeReceipt(how)
+    choose(source, { kind: 'aliased', as: 'fs' })
+    const { result } = await install({ adapters: [rec.adapter] })
+    const success = succeeded(result)
+
+    expect(success.perFacet).toEqual([UPDATED])
+    expect(success.summary.facets).toMatchObject({ updated: 1, repaired: 0 })
+    expect(success.mcp.dispositions).toEqual([
+      { kind: 'aliased', facet: 'alpha', authoredName: 'filesystem', effectiveName: 'fs', change },
+    ])
+  })
+
+  test('a legacy lockfile carrying a servers field is not evidence of a change', async () => {
+    const source = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: source } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+
+    // Relabelled: the inventory is still in the file, but the version says
+    // the file cannot record one.
+    const lockPath = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+    lock.lockfileVersion = 0.3
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`)
+    degradeReceipt('missing')
+    choose(source, { kind: 'omitted' })
+
+    const { result } = await install({ adapters: [rec.adapter] })
+    const success = succeeded(result)
+
+    expect(success.perFacet).toEqual([{ kind: 'unchanged', name: 'alpha', version: '1.0.0' }])
+  })
+})
+
 describe('mcp outcomes — takeover', () => {
   test('an equivalent untracked entry is adopted as unchanged plus a takeover', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })

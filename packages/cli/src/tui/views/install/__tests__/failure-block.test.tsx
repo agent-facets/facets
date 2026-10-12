@@ -259,6 +259,68 @@ describe('FailureBlock — frozen checks over locked metadata', () => {
     expect(text).toContain(`locked fingerprint ${FP_B}`)
     expect(text).toContain('Nothing was fetched')
     expect(text).toContain('without --frozen-lockfile')
+    // No stale choices, so no section claiming there are some.
+    expect(text).not.toContain('Also note')
+  })
+
+  // Frozen mode found both problems at once; the terminal shows both, as
+  // stderr already does, rather than leaving the second to be found next run.
+  test('a locked collision with stale choices shows the collision and every stale choice', () => {
+    const text = frame({
+      ok: false,
+      rollback: unchanged,
+      failure: {
+        code: 'LOCKED_MATERIALIZATION_COLLISION',
+        staleOverrides: [
+          {
+            facet: 'alpha',
+            contribution: { kind: 'asset', assetType: 'skill' },
+            authoredName: 'retired-skill',
+            disposition: { kind: 'omitted' },
+          },
+          {
+            facet: 'beta',
+            contribution: { kind: 'mcp-server' },
+            authoredName: 'retired-server',
+            disposition: { kind: 'aliased', as: 'old' },
+          },
+        ],
+        groups: [
+          {
+            kind: 'mcp-server',
+            group: {
+              effectiveName: 'filesystem',
+              members: [
+                {
+                  facet: 'alpha',
+                  authoredName: 'filesystem',
+                  effectiveName: 'filesystem',
+                  fingerprint: FP_A,
+                  disposition: { kind: 'authored' },
+                },
+                {
+                  facet: 'beta',
+                  authoredName: 'filesystem',
+                  effectiveName: 'filesystem',
+                  fingerprint: FP_B,
+                  disposition: { kind: 'authored' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    expect(text).toContain('“filesystem” is claimed by')
+    expect(text).toContain('alpha (server filesystem)')
+    expect(text).toContain('beta (server filesystem)')
+    expect(text).toContain(`locked fingerprint ${FP_A}`)
+    expect(text).toContain(`locked fingerprint ${FP_B}`)
+    expect(text).toContain('the locked content does not contain (they were NOT removed)')
+    expect(text).toContain('alpha: skill “retired-skill”')
+    expect(text).toContain('beta: MCP server “retired-server”')
+    expect(text).toContain('Nothing was fetched')
   })
 
   test('server disposition drift reads as manifest versus lockfile', () => {

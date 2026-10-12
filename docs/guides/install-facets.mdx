@@ -131,7 +131,7 @@ Commit both files so teammates and CI resolve identical versions.
 
 `facets.json` records what your project depends on and how you want its assets named. `facets.lock` records exact versions, <Tooltip headline="Integrity hash" tip="A content hash checked on every install, so you get exactly the bytes that were published." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, per-file records, and every MCP server each facet declares, by name and fingerprint. The CLI owns the lockfile; never hand-edit it.
 
-An older `0.2` or `0.3` lockfile is migrated by your next plain `facet install`. Upgrade every CLI that shares the project first. See [Migrating the lockfile](/cli/install#migrating-the-lockfile).
+See [Migrating the lockfile](/cli/install#migrating-the-lockfile).
 
 A third file, the machine-local install receipt, lives outside your project under [`$FACET_DIR`](/cli/env). It tracks what this machine wrote and holds your MCP approvals, which is why neither travels to teammates.
 
