@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Lockfile02, Lockfile02Facet, LockfileSource } from '@agent-facets/protocol'
+import type { Lockfile02, Lockfile02Facet, LockfileSource, SupportedLockfile } from '@agent-facets/protocol'
 import { LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { detectLockfileDrift } from '../detect-lockfile-drift.ts'
@@ -179,6 +179,94 @@ describe('detectLockfileDrift', () => {
       { name: 'cowsay', reason: 'unsatisfied', manifestSpec: '0.1.2', lockedVersion: '0.1.1' },
       { name: 'stale', reason: 'orphaned', lockedVersion: '4.5.6' },
     ])
+  })
+
+  // A changed KIND of source is the swap the per-kind comparisons above never
+  // saw: a registry entry has no URL or path to compare, so a manifest that
+  // moved a registry facet to a git fork passed coverage untouched. Every
+  // readable lockfile version is checked, because the rule is about the
+  // source, not about what else the format records.
+  describe('a different kind of source than the locked one → source-changed', () => {
+    const SOURCES = {
+      registry: {
+        manifest: '2.0.0',
+        locked: { kind: 'registry', registry: 'https://api.agentfacets.io' },
+        described: 'https://api.agentfacets.io',
+      },
+      git: {
+        manifest: 'github:agent-facets/planner',
+        locked: { kind: 'git', url: 'https://github.com/agent-facets/planner.git', commit: 'a'.repeat(40) },
+        described: 'https://github.com/agent-facets/planner.git',
+      },
+      local: {
+        manifest: './vendor/planner',
+        locked: { kind: 'local', path: './vendor/planner' },
+        described: './vendor/planner',
+      },
+    } as const satisfies Record<string, { manifest: string; locked: LockfileSource; described: string }>
+
+    type Kind = keyof typeof SOURCES
+
+    /** One locked `planner` entry from `kind`, shaped for the given lockfile version. */
+    function lockedAt(version: 0.2 | 0.3 | 0.4, kind: Kind): SupportedLockfile {
+      const asset = {
+        scope: 'user',
+        type: 'skill',
+        name: 'planning',
+        ...(version === 0.2 ? {} : { materialization: { kind: 'authored' } }),
+        files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+      }
+      return {
+        lockfileVersion: version,
+        facets: {
+          planner: {
+            source: SOURCES[kind].locked,
+            version: '2.0.0',
+            integrity: 'sha256:stub',
+            assets: [asset],
+            ...(version === 0.4 ? { servers: [] } : {}),
+          },
+        },
+      } as SupportedLockfile
+    }
+
+    const KINDS = Object.keys(SOURCES) as Kind[]
+    const TRANSITIONS = KINDS.flatMap((from) => KINDS.filter((to) => to !== from).map((to) => [from, to] as const))
+    const CASES = ([0.2, 0.3, 0.4] as const).flatMap((version) =>
+      TRANSITIONS.map(([from, to]) => [version, from, to] as const),
+    )
+
+    test('every pair of kinds is covered', () => {
+      expect(TRANSITIONS).toHaveLength(6)
+      expect(CASES).toHaveLength(18)
+    })
+
+    test.each(CASES)('lockfile %p: locked from %s, manifest now %s', (version, from, to) => {
+      const drift = detectLockfileDrift(manifest({ planner: SOURCES[to].manifest }), lockedAt(version, from), true)
+      expect(drift).toEqual([
+        {
+          name: 'planner',
+          reason: 'source-changed',
+          manifestSpec: SOURCES[to].manifest,
+          lockedSource: SOURCES[from].described,
+        },
+      ])
+    })
+
+    test.each(
+      ([0.2, 0.3, 0.4] as const).flatMap((version) => KINDS.map((kind) => [version, kind] as const)),
+    )('lockfile %p: an unchanged %s source is not drift', (version, kind) => {
+      expect(detectLockfileDrift(manifest({ planner: SOURCES[kind].manifest }), lockedAt(version, kind), true)).toEqual(
+        [],
+      )
+    })
+
+    test('a changed kind is reported once, never also as an unsatisfied version', () => {
+      // A registry specifier the locked git version does not satisfy: the
+      // source is the cause, and the version mismatch is only a symptom of it.
+      const drift = detectLockfileDrift(manifest({ planner: '9.9.9' }), lockedAt(0.4, 'git'), true)
+      expect(drift.map((entry) => entry.reason)).toEqual(['source-changed'])
+    })
   })
 
   test('orphans are not reported when the lockfile did not previously exist', () => {

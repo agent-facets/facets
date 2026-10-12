@@ -751,6 +751,56 @@ describe('refineRemoval — configuration claims', () => {
     })
   })
 
+  // A remaining facet the manifest now sources from somewhere else — here a
+  // registry facet moved to a git fork — is not answered by its locked entry,
+  // however well the receipt agrees with that entry. Carrying it forward would
+  // record the old origin's content under the new origin's name.
+  describe('a remaining facet must still name its locked source', () => {
+    const REGISTRY = 'https://api.agentfacets.io'
+    const FORK = 'https://github.com/agent-facets/keep-fork.git'
+
+    function refineFrom(source: string) {
+      const keep: CurrentLockfileFacet = {
+        ...entryWith([{ name: 'review' }], '1.0.0', [server('filesystem')]),
+        source: { kind: 'registry', registry: REGISTRY },
+      }
+      const previousLockfile: SupportedLockfile = {
+        lockfileVersion: CURRENT_LOCKFILE_VERSION,
+        facets: record([
+          ['keep', keep],
+          ['gone', entryWith([{ name: 'dropped' }])],
+        ]),
+      }
+      return refineRemoval({
+        desiredFacets: record<NormalizedFacetEntry>([['keep', { source, overrides: undefined }]]),
+        previousLockfile,
+        lockfileExisted: true,
+        receiptState: loaded({
+          version: CURRENT_RECEIPT_VERSION,
+          path: '/tmp/project',
+          facets: record([['keep', claimsFor(keep, [{ name: 'filesystem' }])]]),
+        }),
+      })
+    }
+
+    test('a registry facet now sourced from git falls back to resolution', () => {
+      const result = refineFrom(FORK)
+
+      if (result.kind !== 'not-applicable') expect.unreachable()
+      expect(result.reason).toEqual({
+        code: 'remaining-drifted',
+        facets: [{ name: 'keep', reason: 'source-changed', manifestSpec: FORK, lockedSource: REGISTRY }],
+      })
+    })
+
+    test('the same registry source still refines', () => {
+      const result = refineFrom('1.0.0')
+
+      if (result.kind !== 'refined') expect.unreachable()
+      expect(result.refinement.facetEntries.keep?.source).toEqual({ kind: 'registry', registry: REGISTRY })
+    })
+  })
+
   test('a retained identity the receipt recorded twice, differently, falls back', () => {
     // Two claims at one effective name with different fingerprints: the entry
     // on disk says whatever the last write said, and nothing here can put the

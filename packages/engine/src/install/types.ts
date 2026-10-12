@@ -366,11 +366,12 @@ export type StageEvent =
  *   - `orphaned`         — the lockfile pins a facet the manifest no longer
  *                          declares; carries `lockedVersion` but no
  *                          `manifestSpec` (the manifest says nothing about it).
- *   - `source-changed`   — a git/local facet whose manifest source string
- *                          (URL/ref/path) no longer matches the locked
- *                          source; carries both so the user sees the swap.
- *                          Registry version drift is reported as
- *                          `unsatisfied`, not here.
+ *   - `source-changed`   — the manifest names a different source than the
+ *                          locked one: another URL or path, or another kind
+ *                          of source entirely (registry, git, local);
+ *                          carries both so the user sees the swap. Registry
+ *                          version drift is reported as `unsatisfied`, not
+ *                          here.
  */
 export type LockfileDriftEntry =
   | { name: string; reason: 'missing-lockfile'; manifestSpec: string }

@@ -1,4 +1,4 @@
-import type { SupportedLockfile } from '@agent-facets/protocol'
+import type { SupportedLockfile, SupportedLockfileFacet } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { ownEntry } from './own-entry.ts'
@@ -10,8 +10,9 @@ import type { LockfileDriftEntry } from './types.ts'
 /**
  * Coverage check: collect every manifest facet whose lockfile coverage is
  * missing or stale. Returns an empty array when the lockfile fully and
- * consistently covers the manifest. Registry specifiers must be satisfied by
- * the locked version; git/local entries need only exist.
+ * consistently covers the manifest. Every entry must name the source it was
+ * locked from, and a registry specifier must also be satisfied by the locked
+ * version.
  *
  * Two callers ask the same question for different reasons: the frozen
  * pre-flight, which must fail when the lockfile no longer reproduces the
@@ -36,29 +37,22 @@ export function detectLockfileDrift(
       continue
     }
     const parsed = parseManifestFacetSource(name, specifier)
-    if (parsed.ok && parsed.value.kind === 'registry') {
-      if (!satisfies(parseLockedVersion(locked.version), parsed.value.version)) {
-        drift.push({ name, reason: 'unsatisfied', manifestSpec: specifier, lockedVersion: locked.version })
-      }
-    } else if (parsed.ok) {
-      // git/local: any change to the parsed manifest source (a swapped URL
-      // or local path) is drift in frozen mode. The locked source is the
-      // contract; a differing source would otherwise build from an unlocked
-      // origin. Compare canonical, post-parse values — never the raw
-      // specifier text — so a manifest shorthand (`github:owner/repo`, a
-      // `#ref` suffix, a `file:` prefix) matches the provenance a fresh
-      // install wrote. Registry version drift is handled by the `satisfies`
-      // check above, so this branch only fires for git and local sources —
-      // and a registry locked source never reaches here.
-      const lockedSourceString =
-        locked.source.kind === 'git'
-          ? locked.source.url
-          : locked.source.kind === 'local'
-            ? locked.source.path
-            : undefined
-      if (lockedSourceString !== undefined && !sourceMatchesLockedSource(parsed.value, locked.source)) {
-        drift.push({ name, reason: 'source-changed', manifestSpec: specifier, lockedSource: lockedSourceString })
-      }
+    if (!parsed.ok) continue
+    // Source first, for every kind. The locked source is the contract, and a
+    // manifest that points elsewhere — another URL, another path, or another
+    // KIND of source — would build from an origin the lockfile never pinned.
+    // A kind change matters most: resolution drops the stale anchor, so the
+    // new content is never reconciled against what was locked. Canonical,
+    // post-parse values are compared, never the raw specifier text, so a
+    // shorthand (`github:owner/repo`, a `#ref` suffix, a `file:` prefix)
+    // still matches the provenance a fresh install wrote.
+    if (!sourceMatchesLockedSource(parsed.value, locked.source)) {
+      drift.push({ name, reason: 'source-changed', manifestSpec: specifier, lockedSource: describeSource(locked) })
+      continue
+    }
+    // Same registry: the locked version must still satisfy the specifier.
+    if (parsed.value.kind === 'registry' && !satisfies(parseLockedVersion(locked.version), parsed.value.version)) {
+      drift.push({ name, reason: 'unsatisfied', manifestSpec: specifier, lockedVersion: locked.version })
     }
   }
 
@@ -77,4 +71,16 @@ export function detectLockfileDrift(
   }
 
   return drift
+}
+
+/** The locked origin as a user would recognize it. */
+function describeSource(locked: SupportedLockfileFacet): string {
+  switch (locked.source.kind) {
+    case 'registry':
+      return locked.source.registry
+    case 'git':
+      return locked.source.url
+    case 'local':
+      return locked.source.path
+  }
 }
