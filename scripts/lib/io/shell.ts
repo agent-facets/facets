@@ -21,8 +21,9 @@ export const shellIo = {
   turboBuild: (filter?: string) => (filter ? $`bun turbo build --filter=${filter}` : $`bun turbo build`),
   bunInstall: () => $`bun install`,
   publishCliPackage: () => $`bun scripts/release-cli/publish-cli-package.ts`,
+  /** Streams verify.ts output; resolves with its exit code instead of throwing. */
   verifyPackages: (packages: string[], version: string) =>
-    $`bun scripts/release-cli/verify.ts ${version} ${packages.join(',')}`,
+    $`bun scripts/release-cli/verify.ts ${version} ${packages.join(',')}`.nothrow(),
 
   // Filesystem
   readFile: (path: string) => Bun.file(path).text(),

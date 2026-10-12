@@ -1,5 +1,5 @@
 /**
- * npm CLI operations.
+ * npm CLI and registry HTTP operations.
  */
 
 import { $ } from 'bun'
@@ -10,6 +10,11 @@ export const npmIo = {
   /** Check that a specific version of a package exists — returns the shell result. */
   checkVersion: (pkg: string, ver: string) => $`npm view ${pkg}@${ver} version`.quiet(),
   viewDistTag: (pkg: string, tag: string) => $`npm view ${pkg}@${tag} version`.quiet(),
+  /**
+   * GET a full packument from the registry — the representation `npm view` requests.
+   * A single request: no npm disk cache and no npm-registry-fetch retries.
+   */
+  fetchPackument: (url: string, signal: AbortSignal) => fetch(url, { headers: { accept: 'application/json' }, signal }),
   /** Pack the workspace at `dir` into a tarball. Returns `bun pm pack --quiet` stdout, which is the filename. */
   pack: (dir: string) => $`bun pm pack --quiet`.cwd(dir).text(),
   /**
