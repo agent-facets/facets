@@ -161,43 +161,166 @@ export type PlanServerMaterializationResult =
       staleOverrides: readonly StaleServerOverride[]
     }
 
-/** What a generic name claim carries for the server domain. */
-interface ServerClaim {
-  declaration: ReadonlyMcpServerDeclaration
-  fingerprint: McpServerFingerprint
+// --- Fingerprint-only planning over locked inventory ---
+
+/** One authored server known only by its canonical declaration fingerprint. */
+export interface LockedServerRecord {
+  /** The name the publisher declared. Never an alias. */
+  readonly name: string
+  readonly fingerprint: McpServerFingerprint
 }
 
 /**
- * Plan MCP server configuration over the complete desired set.
- *
- * Aliases and omissions apply first, then active claims group by effective
- * name. Claims sharing a fingerprint compose into one configuration; claims
- * that disagree produce one complete collision group naming every claimant,
- * with no winner chosen by ordering.
+ * One facet's complete fingerprint-only server inventory, with the project's
+ * intent for it. Absence of an override means authored materialization —
+ * never "keep whatever another document recorded".
  */
-export function planServerMaterialization(
-  contributions: readonly ServerContribution[],
-): PlanServerMaterializationResult {
-  const result = planEffectiveNames<ServerClaim>(
+export interface LockedServerContribution {
+  readonly facet: string
+  readonly servers: readonly LockedServerRecord[]
+  readonly overrides?: FacetMaterializationOverrides | undefined
+}
+
+/** An authored server and the disposition the project resolved for it. */
+export interface PlannedLockedServer {
+  readonly facet: string
+  readonly authoredName: string
+  readonly fingerprint: McpServerFingerprint
+  /** All three arms — an omitted server is still planned, just not selected. */
+  readonly disposition: Readonly<MaterializationDisposition>
+}
+
+/** One facet's claim on a selected effective server. */
+export interface LockedServerClaimant {
+  readonly facet: string
+  readonly authoredName: string
+  readonly disposition: Readonly<MaterializedDisposition>
+}
+
+/** One selected effective server identity plus every claimant of it. */
+export interface PlannedLockedServerConfiguration {
+  readonly identity: Readonly<McpServerIdentity>
+  /** The addressable ownership key for {@link identity}. */
+  readonly key: string
+  readonly fingerprint: McpServerFingerprint
+  /** Always at least one, deterministically ordered. */
+  readonly claimants: readonly LockedServerClaimant[]
+}
+
+/** One claimant of a contested effective server name, without its declaration. */
+export interface LockedServerCollisionMember {
+  readonly facet: string
+  readonly authoredName: string
+  readonly effectiveName: string
+  readonly fingerprint: McpServerFingerprint
+  readonly disposition: Readonly<MaterializationDisposition>
+}
+
+/** Two or more differing fingerprints claiming one effective name. */
+export interface LockedServerCollisionGroup {
+  readonly effectiveName: string
+  /** Always two or more, deterministically ordered. */
+  readonly members: readonly LockedServerCollisionMember[]
+}
+
+/**
+ * The fingerprint-only planner's result. The same three arms as
+ * {@link PlanServerMaterializationResult}, minus every declaration payload.
+ * Nothing here asserts that a fingerprint was verified against content.
+ */
+export type PlanLockedServerInventoryResult =
+  | {
+      readonly ok: true
+      /** Every authored server with its final disposition, including omitted ones. */
+      readonly planned: readonly PlannedLockedServer[]
+      /** The selected configurations, one per identity. */
+      readonly configurations: readonly PlannedLockedServerConfiguration[]
+      readonly staleOverrides: readonly Readonly<StaleServerOverride>[]
+    }
+  | { readonly ok: false; readonly reason: 'invalid-alias'; readonly problems: readonly Readonly<InvalidServerAlias>[] }
+  | {
+      readonly ok: false
+      readonly reason: 'collision'
+      readonly groups: readonly LockedServerCollisionGroup[]
+      readonly staleOverrides: readonly Readonly<StaleServerOverride>[]
+    }
+
+// --- The shared server-claim core ---
+
+/** The minimum every server claim value carries: the equivalence it composes by. */
+interface ServerClaimValue {
+  readonly fingerprint: McpServerFingerprint
+}
+
+interface ServerClaimContribution<V extends ServerClaimValue> {
+  facet: string
+  claims: readonly { name: string; value: V }[]
+  overrides?: FacetMaterializationOverrides | undefined
+}
+
+interface ServerClaimPlanned<V> {
+  facet: string
+  authoredName: string
+  value: V
+  disposition: MaterializationDisposition
+}
+
+interface ServerClaimConfiguration<V> {
+  effectiveName: string
+  /** The first claimant's value; every claimant shares its fingerprint. */
+  value: V
+  claimants: ServerClaimant[]
+}
+
+interface ServerClaimCollisionMember<V> {
+  facet: string
+  authoredName: string
+  effectiveName: string
+  value: V
+  disposition: MaterializationDisposition
+}
+
+type PlanServerClaimsResult<V> =
+  | {
+      ok: true
+      planned: ServerClaimPlanned<V>[]
+      configurations: ServerClaimConfiguration<V>[]
+      staleOverrides: StaleServerOverride[]
+    }
+  | { ok: false; reason: 'invalid-alias'; problems: InvalidServerAlias[] }
+  | {
+      ok: false
+      reason: 'collision'
+      groups: { effectiveName: string; members: ServerClaimCollisionMember<V>[] }[]
+      staleOverrides: StaleServerOverride[]
+    }
+
+/**
+ * The one server-domain planning rule, behind both public wrappers.
+ *
+ * Owns everything that makes a server a server rather than an asset: the
+ * identity space, the single override group, and composition by fingerprint
+ * equality. The wrappers differ only in what each claim's `value` carries —
+ * a frozen declaration plus its fingerprint, or a fingerprint alone — so the
+ * declaration-based and fingerprint-only plans cannot drift apart on naming,
+ * ordering, aliasing, collision, or stale-intent semantics.
+ */
+function planServerClaims<V extends ServerClaimValue>(
+  contributions: readonly ServerClaimContribution<V>[],
+): PlanServerClaimsResult<V> {
+  const result = planEffectiveNames<V>(
     contributions.map((contribution) => ({
       owner: contribution.facet,
-      claims: contribution.servers.map((server) => {
-        // Cloned exactly once per contributed declaration, and fingerprinted
-        // from the clone. Every view below shares this one frozen object, so
-        // the plan cannot become internally inconsistent and cannot be
-        // desynchronized from its fingerprint by a mutation of the input.
-        const declaration = freezeMcpServerDeclaration(server.declaration)
-        return {
-          owner: contribution.facet,
-          group: SERVER_OVERRIDE_GROUP,
-          // One group, so the order among groups is constant and the effective
-          // ordering falls through to the authored name.
-          groupOrder: 0,
-          authoredName: server.name,
-          space: SERVER_SPACE,
-          value: { declaration, fingerprint: computeMcpServerFingerprint(declaration) },
-        }
-      }),
+      claims: contribution.claims.map((claim) => ({
+        owner: contribution.facet,
+        group: SERVER_OVERRIDE_GROUP,
+        // One group, so the order among groups is constant and the effective
+        // ordering falls through to the authored name.
+        groupOrder: 0,
+        authoredName: claim.name,
+        space: SERVER_SPACE,
+        value: claim.value,
+      })),
       overrides: contribution.overrides,
     })),
     {
@@ -238,8 +361,7 @@ export function planServerMaterialization(
           facet: member.claim.owner,
           authoredName: member.claim.authoredName,
           effectiveName: member.effectiveName,
-          declaration: member.claim.value.declaration,
-          fingerprint: member.claim.value.fingerprint,
+          value: member.claim.value,
           disposition: member.disposition,
         })),
       })),
@@ -247,24 +369,21 @@ export function planServerMaterialization(
     }
   }
 
-  const planned: PlannedServer[] = result.planned.map((entry) => ({
+  const planned = result.planned.map((entry) => ({
     facet: entry.claim.owner,
     authoredName: entry.claim.authoredName,
-    declaration: entry.claim.value.declaration,
-    fingerprint: entry.claim.value.fingerprint,
+    value: entry.claim.value,
     disposition: entry.disposition,
   }))
 
-  const configurations: PlannedServerConfiguration[] = result.identities.map((identity) => {
+  const configurations = result.identities.map((identity) => {
     // Safe: the core never emits an identity with no members, and every
     // member of one identity shares a fingerprint here — that is exactly what
     // made the group uncontested.
-    const first = identity.members[0] as MaterializedName<ServerClaim>
+    const first = identity.members[0] as MaterializedName<V>
     return {
-      identity: { kind: 'mcp-server', effectiveName: identity.effectiveName },
-      key: mcpServerKey(identity.effectiveName),
-      declaration: first.claim.value.declaration,
-      fingerprint: first.claim.value.fingerprint,
+      effectiveName: identity.effectiveName,
+      value: first.claim.value,
       claimants: identity.members.map((member) => ({
         facet: member.claim.owner,
         authoredName: member.claim.authoredName,
@@ -274,4 +393,137 @@ export function planServerMaterialization(
   })
 
   return { ok: true, planned, configurations, staleOverrides }
+}
+
+// --- Public wrappers ---
+
+/** What a declaration-based claim carries for the server domain. */
+interface ServerClaim extends ServerClaimValue {
+  declaration: ReadonlyMcpServerDeclaration
+}
+
+/**
+ * Plan MCP server configuration over the complete desired set.
+ *
+ * Aliases and omissions apply first, then active claims group by effective
+ * name. Claims sharing a fingerprint compose into one configuration; claims
+ * that disagree produce one complete collision group naming every claimant,
+ * with no winner chosen by ordering.
+ */
+export function planServerMaterialization(
+  contributions: readonly ServerContribution[],
+): PlanServerMaterializationResult {
+  const result = planServerClaims<ServerClaim>(
+    contributions.map((contribution) => ({
+      facet: contribution.facet,
+      claims: contribution.servers.map((server) => {
+        // Cloned exactly once per contributed declaration, and fingerprinted
+        // from the clone. Every view below shares this one frozen object, so
+        // the plan cannot become internally inconsistent and cannot be
+        // desynchronized from its fingerprint by a mutation of the input.
+        const declaration = freezeMcpServerDeclaration(server.declaration)
+        return { name: server.name, value: { declaration, fingerprint: computeMcpServerFingerprint(declaration) } }
+      }),
+      overrides: contribution.overrides,
+    })),
+  )
+
+  if (!result.ok) {
+    if (result.reason === 'invalid-alias') return result
+    return {
+      ok: false,
+      reason: 'collision',
+      groups: result.groups.map((group) => ({
+        effectiveName: group.effectiveName,
+        members: group.members.map((member) => ({
+          facet: member.facet,
+          authoredName: member.authoredName,
+          effectiveName: member.effectiveName,
+          declaration: member.value.declaration,
+          fingerprint: member.value.fingerprint,
+          disposition: member.disposition,
+        })),
+      })),
+      staleOverrides: result.staleOverrides,
+    }
+  }
+
+  const planned: PlannedServer[] = result.planned.map((entry) => ({
+    facet: entry.facet,
+    authoredName: entry.authoredName,
+    declaration: entry.value.declaration,
+    fingerprint: entry.value.fingerprint,
+    disposition: entry.disposition,
+  }))
+
+  const configurations: PlannedServerConfiguration[] = result.configurations.map((configuration) => ({
+    identity: { kind: 'mcp-server', effectiveName: configuration.effectiveName },
+    key: mcpServerKey(configuration.effectiveName),
+    declaration: configuration.value.declaration,
+    fingerprint: configuration.value.fingerprint,
+    claimants: configuration.claimants,
+  }))
+
+  return { ok: true, planned, configurations, staleOverrides: result.staleOverrides }
+}
+
+/**
+ * Plan MCP server materialization from complete fingerprint-only inventories.
+ *
+ * Follows exactly the rules of {@link planServerMaterialization} — it is the
+ * same core — but needs no declaration, so locked records can be planned
+ * against project intent without fetching facet content or fabricating
+ * declarations. Each contribution must be a facet's COMPLETE authored server
+ * set, including servers with no override and facets with no servers, so
+ * stale intent is detected everywhere.
+ *
+ * Supplied fingerprints are planned as given; nothing in the result asserts
+ * they were verified against a declaration or an archive.
+ */
+export function planLockedServerInventory(
+  contributions: readonly LockedServerContribution[],
+): PlanLockedServerInventoryResult {
+  const result = planServerClaims<ServerClaimValue>(
+    contributions.map((contribution) => ({
+      facet: contribution.facet,
+      claims: contribution.servers.map((server) => ({ name: server.name, value: { fingerprint: server.fingerprint } })),
+      overrides: contribution.overrides,
+    })),
+  )
+
+  if (!result.ok) {
+    if (result.reason === 'invalid-alias') return result
+    return {
+      ok: false,
+      reason: 'collision',
+      groups: result.groups.map((group) => ({
+        effectiveName: group.effectiveName,
+        members: group.members.map((member) => ({
+          facet: member.facet,
+          authoredName: member.authoredName,
+          effectiveName: member.effectiveName,
+          fingerprint: member.value.fingerprint,
+          disposition: member.disposition,
+        })),
+      })),
+      staleOverrides: result.staleOverrides,
+    }
+  }
+
+  return {
+    ok: true,
+    planned: result.planned.map((entry) => ({
+      facet: entry.facet,
+      authoredName: entry.authoredName,
+      fingerprint: entry.value.fingerprint,
+      disposition: entry.disposition,
+    })),
+    configurations: result.configurations.map((configuration) => ({
+      identity: { kind: 'mcp-server', effectiveName: configuration.effectiveName },
+      key: mcpServerKey(configuration.effectiveName),
+      fingerprint: configuration.value.fingerprint,
+      claimants: configuration.claimants,
+    })),
+    staleOverrides: result.staleOverrides,
+  }
 }

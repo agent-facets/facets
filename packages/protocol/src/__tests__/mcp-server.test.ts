@@ -3,10 +3,17 @@ import {
   canonicalMcpServerEncoding,
   computeMcpServerFingerprint,
   FacetManifestSchema,
+  type FacetMaterializationOverrides,
   LegacyFacetManifestSchema,
+  LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING,
+  type LockedServerContribution,
+  MCP_SERVER_FINGERPRINT_ENCODING,
   type McpServerDeclaration,
   McpServerDeclarationSchema,
+  type PlanServerMaterializationResult,
+  planLockedServerInventory,
   planServerMaterialization,
+  type ServerContribution,
   validateMcpEnvironmentName,
   validateMcpServerName,
 } from '@agent-facets/protocol'
@@ -257,6 +264,75 @@ describe('computeMcpServerFingerprint', () => {
   })
 })
 
+// --- Encoding binding and fixed vectors ---
+
+describe('fingerprint encoding identifiers', () => {
+  test('the encoder publishes its encoding identifier', () => {
+    expect(MCP_SERVER_FINGERPRINT_ENCODING).toBe('facets:mcp-server:v1')
+  })
+
+  test('lockfile 0.4 is bound to facets:mcp-server:v1 by its own literal', () => {
+    expect(LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING).toBe('facets:mcp-server:v1')
+  })
+
+  test('the current encoder agrees with the 0.4 binding', () => {
+    expect(MCP_SERVER_FINGERPRINT_ENCODING).toBe(LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING)
+  })
+})
+
+/**
+ * Fixed vectors for the `0.4` binding. The digests were computed outside this
+ * implementation from the literal preimage bytes, so a change to either the
+ * encoder or the hash fails here even if both sides changed together. Never
+ * update these to match new output: a different digest is a new encoding.
+ */
+describe('facets:mcp-server:v1 fixed vectors', () => {
+  test('standard-input preimage and digest', () => {
+    const declaration: McpServerDeclaration = { type: 'stdio', command: 'npx' }
+    expect(canonicalMcpServerEncoding(declaration)).toBe('["facets:mcp-server:v1","stdio","npx",[],[]]')
+    expect(computeMcpServerFingerprint(declaration)).toBe(
+      'sha256:6424550ee92491465134168e17c8c43082b58ad834e436318c4a5eb8ec14db91',
+    )
+  })
+
+  test('HTTP preimage and digest', () => {
+    const declaration: McpServerDeclaration = { type: 'http', url: 'https://example.com/mcp' }
+    expect(canonicalMcpServerEncoding(declaration)).toBe('["facets:mcp-server:v1","http","https://example.com/mcp"]')
+    expect(computeMcpServerFingerprint(declaration)).toBe(
+      'sha256:490eeb871c13796d932d8d80f8eda0748a1cb1f9afa02536c4f8bddabd6dbbd5',
+    )
+  })
+
+  test('the preimage is compact JSON with literal values', () => {
+    const encoding = canonicalMcpServerEncoding({
+      type: 'stdio',
+      command: 'run me',
+      args: ['--flag', 'a b'],
+      env: { Z: ' spaced ', A: '$HOME' },
+    })
+    expect(encoding).toBe('["facets:mcp-server:v1","stdio","run me",["--flag","a b"],[["A","$HOME"],["Z"," spaced "]]]')
+  })
+
+  test('absent collections encode as empty arrays', () => {
+    expect(canonicalMcpServerEncoding({ type: 'stdio', command: 'npx', args: [], env: {} })).toBe(
+      '["facets:mcp-server:v1","stdio","npx",[],[]]',
+    )
+  })
+
+  test('the fingerprint depends on neither server name nor contributing facet', () => {
+    const declaration: McpServerDeclaration = { type: 'stdio', command: 'npx' }
+    const result = planServerMaterialization([
+      { facet: 'from-registry', servers: [{ name: 'one', declaration }] },
+      { facet: 'from-git', servers: [{ name: 'two', declaration }] },
+      { facet: 'from-local', servers: [{ name: 'three', declaration }] },
+    ])
+    if (!result.ok) expect.unreachable()
+    expect(new Set(result.planned.map((p) => p.fingerprint))).toEqual(
+      new Set(['sha256:6424550ee92491465134168e17c8c43082b58ad834e436318c4a5eb8ec14db91']),
+    )
+  })
+})
+
 // --- Server materialization planning ---
 
 describe('planServerMaterialization', () => {
@@ -437,4 +513,275 @@ describe('planServerMaterialization', () => {
     ])
     expect(one).toEqual(two)
   })
+})
+
+// --- Fingerprint-only planning ---
+
+describe('planLockedServerInventory', () => {
+  const X = computeMcpServerFingerprint({ type: 'stdio', command: 'x' })
+  const Y = computeMcpServerFingerprint({ type: 'stdio', command: 'y' })
+
+  test('a missing override means authored, not a remembered alias', () => {
+    const result = planLockedServerInventory([{ facet: 'a', servers: [{ name: 'fs', fingerprint: X }] }])
+    if (!result.ok) expect.unreachable()
+    expect(result.planned).toEqual([
+      { facet: 'a', authoredName: 'fs', fingerprint: X, disposition: { kind: 'authored' } },
+    ])
+    expect(result.configurations.map((c) => c.identity.effectiveName)).toEqual(['fs'])
+  })
+
+  test('identical fingerprints compose and keep every claimant', () => {
+    const result = planLockedServerInventory([
+      { facet: 'b', servers: [{ name: 'fs', fingerprint: X }] },
+      { facet: 'a', servers: [{ name: 'fs', fingerprint: X }] },
+    ])
+    if (!result.ok) expect.unreachable()
+    expect(result.configurations).toEqual([
+      {
+        identity: { kind: 'mcp-server', effectiveName: 'fs' },
+        key: 'mcp-server\u0000fs',
+        fingerprint: X,
+        claimants: [
+          { facet: 'a', authoredName: 'fs', disposition: { kind: 'authored' } },
+          { facet: 'b', authoredName: 'fs', disposition: { kind: 'authored' } },
+        ],
+      },
+    ])
+  })
+
+  test('alias swaps are planned in one pass', () => {
+    const result = planLockedServerInventory([
+      {
+        facet: 'a',
+        servers: [
+          { name: 'alpha', fingerprint: X },
+          { name: 'beta', fingerprint: Y },
+        ],
+        overrides: { servers: { alpha: { kind: 'aliased', as: 'beta' }, beta: { kind: 'aliased', as: 'alpha' } } },
+      },
+    ])
+    if (!result.ok) expect.unreachable()
+    expect(result.configurations.map((c) => [c.identity.effectiveName, c.fingerprint])).toEqual([
+      ['alpha', Y],
+      ['beta', X],
+    ])
+  })
+
+  test('an empty facet still reports stale server intent', () => {
+    const result = planLockedServerInventory([
+      { facet: 'a', servers: [], overrides: { servers: { gone: { kind: 'omitted' } } } },
+    ])
+    if (!result.ok) expect.unreachable()
+    expect(result.staleOverrides).toEqual([{ facet: 'a', authoredName: 'gone', disposition: { kind: 'omitted' } }])
+  })
+
+  test('an invalid alias is not a collision', () => {
+    const result = planLockedServerInventory([
+      {
+        facet: 'a',
+        servers: [{ name: 'fs', fingerprint: X }],
+        overrides: { servers: { fs: { kind: 'aliased', as: 'Bad_Name' } } },
+      },
+      { facet: 'b', servers: [{ name: 'fs', fingerprint: Y }] },
+    ])
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('invalid-alias')
+  })
+
+  test('a collision keeps unrelated stale diagnostics and selects nothing', () => {
+    const result = planLockedServerInventory([
+      { facet: 'a', servers: [{ name: 'fs', fingerprint: X }] },
+      { facet: 'b', servers: [{ name: 'fs', fingerprint: Y }], overrides: { servers: { gone: { kind: 'omitted' } } } },
+      { facet: 'c', servers: [{ name: 'clean', fingerprint: X }] },
+    ])
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'collision') expect.unreachable()
+    expect(result.groups).toEqual([
+      {
+        effectiveName: 'fs',
+        members: [
+          { facet: 'a', authoredName: 'fs', effectiveName: 'fs', fingerprint: X, disposition: { kind: 'authored' } },
+          { facet: 'b', authoredName: 'fs', effectiveName: 'fs', fingerprint: Y, disposition: { kind: 'authored' } },
+        ],
+      },
+    ])
+    expect(result.staleOverrides).toEqual([{ facet: 'b', authoredName: 'gone', disposition: { kind: 'omitted' } }])
+    expect(Object.hasOwn(result, 'configurations')).toBe(false)
+  })
+
+  test('results carry no declaration payload', () => {
+    const result = planLockedServerInventory([{ facet: 'a', servers: [{ name: 'fs', fingerprint: X }] }])
+    if (!result.ok) expect.unreachable()
+    expect(Object.hasOwn(result.planned[0] as object, 'declaration')).toBe(false)
+    expect(Object.hasOwn(result.configurations[0] as object, 'declaration')).toBe(false)
+  })
+
+  test('mutating the input afterwards does not change the result', () => {
+    const override: { kind: 'aliased'; as: string } = { kind: 'aliased', as: 'project-fs' }
+    const servers = [{ name: 'fs', fingerprint: X }]
+    const overrides = { servers: { fs: override } }
+    const result = planLockedServerInventory([{ facet: 'a', servers, overrides }])
+    if (!result.ok) expect.unreachable()
+    const snapshot = structuredClone(result)
+
+    override.as = 'other'
+    servers.push({ name: 'late', fingerprint: Y })
+    ;(servers[0] as { fingerprint: string }).fingerprint = Y
+
+    expect(result).toEqual(snapshot)
+    expect(result.planned[0]?.disposition).not.toBe(override)
+    expect(result.configurations[0]?.claimants[0]?.disposition).not.toBe(override)
+  })
+})
+
+// --- Declaration planning and fingerprint planning agree ---
+
+describe('planLockedServerInventory agrees with planServerMaterialization', () => {
+  const decl = (command: string): McpServerDeclaration => ({ type: 'stdio', command })
+
+  /** The declaration planner's result with every declaration payload removed. */
+  function withoutDeclarations(result: PlanServerMaterializationResult): unknown {
+    if (!result.ok) {
+      if (result.reason === 'invalid-alias') return result
+      return {
+        ...result,
+        groups: result.groups.map((group) => ({
+          effectiveName: group.effectiveName,
+          members: group.members.map(({ declaration: _, ...rest }) => rest),
+        })),
+      }
+    }
+    return {
+      ok: true,
+      planned: result.planned.map(({ declaration: _, ...rest }) => rest),
+      configurations: result.configurations.map(({ declaration: _, ...rest }) => rest),
+      staleOverrides: result.staleOverrides,
+    }
+  }
+
+  function locked(contributions: readonly ServerContribution[]): LockedServerContribution[] {
+    return contributions.map((contribution) => ({
+      facet: contribution.facet,
+      servers: contribution.servers.map((server) => ({
+        name: server.name,
+        fingerprint: computeMcpServerFingerprint(server.declaration),
+      })),
+      overrides: contribution.overrides,
+    }))
+  }
+
+  /** Every arrangement of facet order crossed with forward/reversed server order. */
+  function permutations(contributions: readonly ServerContribution[]): ServerContribution[][] {
+    const orders: ServerContribution[][] = [[]]
+    for (const contribution of contributions) {
+      const next: ServerContribution[][] = []
+      for (const order of orders) {
+        for (let i = 0; i <= order.length; i++) next.push([...order.slice(0, i), contribution, ...order.slice(i)])
+      }
+      orders.splice(0, orders.length, ...next)
+    }
+    return orders.flatMap((order) => [
+      order,
+      order.map((contribution) => ({ ...contribution, servers: [...contribution.servers].reverse() })),
+    ])
+  }
+
+  const overrides = (servers: FacetMaterializationOverrides['servers']): FacetMaterializationOverrides => ({ servers })
+
+  const fixtures: Record<string, ServerContribution[]> = {
+    'no contributions': [],
+    'stale override on an empty facet': [
+      { facet: 'a', servers: [], overrides: overrides({ gone: { kind: 'omitted' } }) },
+    ],
+    'missing override means authored': [{ facet: 'a', servers: [{ name: 'fs', declaration: decl('x') }] }],
+    'identical declarations across facets': [
+      { facet: 'a', servers: [{ name: 'fs', declaration: decl('x') }] },
+      { facet: 'b', servers: [{ name: 'fs', declaration: decl('x') }] },
+    ],
+    'alias swap': [
+      {
+        facet: 'a',
+        servers: [
+          { name: 'alpha', declaration: decl('x') },
+          { name: 'beta', declaration: decl('y') },
+        ],
+        overrides: overrides({ alpha: { kind: 'aliased', as: 'beta' }, beta: { kind: 'aliased', as: 'alpha' } }),
+      },
+    ],
+    'two authored names from one facet compose': [
+      {
+        facet: 'a',
+        servers: [
+          { name: 'one', declaration: decl('x') },
+          { name: 'two', declaration: decl('x') },
+        ],
+        overrides: overrides({ two: { kind: 'aliased', as: 'one' } }),
+      },
+    ],
+    'two authored names from one facet collide': [
+      {
+        facet: 'a',
+        servers: [
+          { name: 'one', declaration: decl('x') },
+          { name: 'two', declaration: decl('y') },
+        ],
+        overrides: overrides({ two: { kind: 'aliased', as: 'one' } }),
+      },
+    ],
+    'equal fingerprints at distinct identities': [
+      {
+        facet: 'a',
+        servers: [
+          { name: 'one', declaration: decl('x') },
+          { name: 'two', declaration: decl('x') },
+        ],
+      },
+    ],
+    'omission removes a would-be collision': [
+      {
+        facet: 'a',
+        servers: [{ name: 'fs', declaration: decl('x') }],
+        overrides: overrides({ fs: { kind: 'omitted' } }),
+      },
+      { facet: 'b', servers: [{ name: 'fs', declaration: decl('y') }] },
+    ],
+    'alias resolves a collision': [
+      {
+        facet: 'a',
+        servers: [{ name: 'fs', declaration: decl('x') }],
+        overrides: overrides({ fs: { kind: 'aliased', as: 'project-fs' } }),
+      },
+      { facet: 'b', servers: [{ name: 'fs', declaration: decl('y') }] },
+    ],
+    'collision with unrelated stale intent': [
+      { facet: 'a', servers: [{ name: 'fs', declaration: decl('x') }] },
+      {
+        facet: 'b',
+        servers: [
+          { name: 'clean', declaration: decl('z') },
+          { name: 'fs', declaration: decl('y') },
+        ],
+        overrides: overrides({ gone: { kind: 'omitted' } }),
+      },
+    ],
+    'invalid alias beside a collision': [
+      {
+        facet: 'a',
+        servers: [{ name: 'fs', declaration: decl('x') }],
+        overrides: overrides({ fs: { kind: 'aliased', as: 'Bad_Name' } }),
+      },
+      { facet: 'b', servers: [{ name: 'fs', declaration: decl('y') }] },
+      { facet: 'c', servers: [{ name: 'fs', declaration: decl('z') }] },
+    ],
+  }
+
+  for (const [name, contributions] of Object.entries(fixtures)) {
+    test(name, () => {
+      const expected = withoutDeclarations(planServerMaterialization(contributions))
+      for (const order of permutations(contributions)) {
+        expect(withoutDeclarations(planServerMaterialization(order))).toEqual(expected)
+        expect<unknown>(planLockedServerInventory(locked(order))).toEqual(expected)
+      }
+    })
+  }
 })

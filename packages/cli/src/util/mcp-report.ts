@@ -11,6 +11,7 @@ import type {
   McpDocumentOverlap,
   McpNativeTakeover,
   McpUnsupportedAdapter,
+  RunInstallFailure,
 } from '@agent-facets/engine'
 import { omitSnippet, serverManifestLocation, UNCHANGED_FOOTER } from './collision-report.ts'
 
@@ -280,6 +281,81 @@ export function formatMcpDocumentOverlapReport(overlaps: readonly McpDocumentOve
   )
 
   lines.push(...UNCHANGED_FOOTER)
+  return lines.join('\n')
+}
+
+/** A reproduced `0.4` entry whose recorded server inventory disagrees with verified content. */
+export type ServerInventoryMismatch = Extract<
+  RunInstallFailure,
+  { code: 'RECONCILE_SERVER_IDENTITY' | 'RECONCILE_SERVER_FINGERPRINT' }
+>
+
+/**
+ * The heading and detail lines for a server-inventory mismatch.
+ *
+ * Shared by the Ink block and the stderr/JSON report so both describe the
+ * condition identically. Names and fingerprints only — the recorded metadata
+ * never carried a declaration, and nothing here fetches one to enrich the
+ * report. Every user-derived string is escaped, so a hostile facet or server
+ * name cannot add a line or reach the terminal.
+ */
+export function describeServerInventoryMismatch(failure: ServerInventoryMismatch): {
+  heading: string
+  lines: string[]
+} {
+  const facet = terminalLiteral(failure.facet)
+  switch (failure.code) {
+    case 'RECONCILE_SERVER_IDENTITY': {
+      const lines: string[] = []
+      if (failure.missing.length > 0) {
+        lines.push(`locked but not declared: ${failure.missing.map(terminalLiteral).join(', ')}`)
+      }
+      if (failure.unexpected.length > 0) {
+        lines.push(`declared but not locked: ${failure.unexpected.map(terminalLiteral).join(', ')}`)
+      }
+      return {
+        heading: `facets.lock records a different MCP server set than the verified content of ${facet}`,
+        lines,
+      }
+    }
+    case 'RECONCILE_SERVER_FINGERPRINT':
+      return {
+        heading: `facets.lock records a different fingerprint for server ${terminalLiteral(failure.authoredName)} in ${facet}`,
+        lines: [`locked:   ${terminalLiteral(failure.expected)}`, `verified: ${terminalLiteral(failure.actual)}`],
+      }
+  }
+}
+
+/**
+ * What a same-integrity inventory mismatch means, in one sentence.
+ *
+ * States only what the check established: the content reproduces its locked
+ * integrity and the recorded server metadata disagrees with it. How the two
+ * came apart — a hand edit, a bad merge, a tool bug — is not knowable here,
+ * so it is not claimed. A plain re-run fails the same way, and regenerating
+ * the records would discard the evidence, so this points at the lockfile.
+ */
+export const SERVER_INVENTORY_MISMATCH_EXPLANATION =
+  'The facet content matches its locked integrity, but the server metadata recorded for it in facets.lock does not.'
+
+/** The remedy for a same-integrity inventory mismatch. */
+export function serverInventoryMismatchFix(command: string): string {
+  return `review the server records in facets.lock for the facet named above and restore them from a trusted revision of the project, then re-run 'facet ${command}'`
+}
+
+/** The full stderr report for a same-integrity inventory mismatch. */
+export function formatServerInventoryMismatchReport(failure: ServerInventoryMismatch): string {
+  const described = describeServerInventoryMismatch(failure)
+  const lines: string[] = [
+    `${described.heading}.`,
+    ``,
+    ...described.lines.map((line) => `    ${line}`),
+    ``,
+    `  ${SERVER_INVENTORY_MISMATCH_EXPLANATION}`,
+    `  Re-running will not repair it: restore the records from a trusted revision first.`,
+    ``,
+    ...UNCHANGED_FOOTER,
+  ]
   return lines.join('\n')
 }
 

@@ -13,6 +13,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
+import {
+  computeMcpServerFingerprint,
+  type McpServerDeclaration,
+  type McpServerFingerprint,
+} from '@agent-facets/protocol'
 import type { AssetTakeoverRequest } from '../asset-takeover.ts'
 import type { McpConsentPolicy, McpConsentRequest } from '../mcp/consent.ts'
 import { receiptPath } from '../receipt.ts'
@@ -35,8 +40,8 @@ let originalCwd: string
 let originalFacetDir: string | undefined
 let fakeHome: string
 
-const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
-const HTTP = { type: 'http', url: 'https://example.test/mcp' }
+const STDIO: McpServerDeclaration = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
+const HTTP: McpServerDeclaration = { type: 'http', url: 'https://example.test/mcp' }
 const ACCEPT: McpConsentPolicy = { kind: 'preapproved' }
 
 interface TestAdapter {
@@ -1923,5 +1928,308 @@ describe('mcp — interruption', () => {
     expect(result.failure.code).toBe('ABORTED')
     expect(readIfPresent(rec.documentPath)).toBeNull()
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+})
+
+describe('mcp — same-integrity server inventory reconciliation', () => {
+  const OTHER_FINGERPRINT: McpServerFingerprint = `sha256:${'9'.repeat(64)}`
+
+  type Disposition = { kind: 'authored' } | { kind: 'aliased'; as: string } | { kind: 'omitted' }
+  type InventoryRecord = { name: string; fingerprint: McpServerFingerprint; materialization: Disposition }
+
+  /** Install once so the facets, receipt, approval, and native entry all exist. */
+  async function seed(manifest: unknown = { facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } }) {
+    writeManifest(manifest)
+    const seeded = await runInstall({
+      projectRoot,
+      adapters: [mcpAdapter('rec').adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
+    if (!seeded.ok) expect.unreachable('test bug: seeding install failed')
+  }
+
+  /**
+   * Rewrite the written lockfile as an explicit `0.4` input with the given
+   * inventory for `alpha` and an empty one for every other facet. The writer
+   * is still `0.3`, so a `0.4` previous document can only come from a
+   * fixture — which is also how a teammate's newer lockfile arrives.
+   */
+  function relock04(servers: InventoryRecord[]): void {
+    const path = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(path, 'utf8'))
+    lock.lockfileVersion = 0.4
+    for (const entry of Object.values(lock.facets) as Array<Record<string, unknown>>) entry.servers = []
+    lock.facets.alpha.servers = servers
+    writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
+  }
+
+  const authored = (name: string, fingerprint: McpServerFingerprint): InventoryRecord => ({
+    name,
+    fingerprint,
+    materialization: { kind: 'authored' },
+  })
+
+  function snapshot(documentPath: string): Record<string, string | null> {
+    return {
+      manifest: readIfPresent(join(projectRoot, 'facets.json')),
+      lockfile: readIfPresent(join(projectRoot, 'facets.lock')),
+      receipt: readIfPresent(receiptPath(projectRoot)),
+      document: readIfPresent(documentPath),
+    }
+  }
+
+  /**
+   * A normal run with every interaction hook instrumented. The collision
+   * resolver cancels and consent approves, so a control run shows which of
+   * them the project state actually requires.
+   */
+  async function attemptNormal() {
+    const rec = mcpAdapter('rec')
+    const stages: string[] = []
+    const prompts = { collision: 0, consent: 0 }
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      onStage: (event) => stages.push(event.kind),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            prompts.consent++
+            return { kind: 'approved' }
+          },
+        },
+        resolveCollisions: async () => {
+          prompts.collision++
+          return { kind: 'cancelled' }
+        },
+      },
+    })
+    return { result, rec, stages, prompts }
+  }
+
+  /**
+   * A frozen run. Frozen reproduction can never prompt — the operation type
+   * does not admit a resolver or interactive consent — so only the
+   * non-interactive policy is supplied, and what is observable is planning
+   * and writes.
+   */
+  async function attemptFrozen() {
+    const rec = mcpAdapter('rec')
+    const stages: string[] = []
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      onStage: (event) => stages.push(event.kind),
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: { kind: 'unavailable' } },
+    })
+    return { result, rec, stages }
+  }
+
+  const attempt = (frozen: boolean) => (frozen ? attemptFrozen() : attemptNormal())
+
+  for (const frozen of [false, true]) {
+    const mode = frozen ? 'frozen' : 'normal'
+
+    test(`${mode}: a changed locked fingerprint fails before native planning or any write`, async () => {
+      await seed()
+      relock04([authored('filesystem', OTHER_FINGERPRINT)])
+      const before = snapshot(mcpAdapter('rec').documentPath)
+
+      const { result, rec, stages } = await attempt(frozen)
+
+      if (result.ok) expect.unreachable()
+      expect(result.failure).toEqual({
+        code: 'RECONCILE_SERVER_FINGERPRINT',
+        facet: 'alpha',
+        authoredName: 'filesystem',
+        expected: OTHER_FINGERPRINT,
+        actual: computeMcpServerFingerprint(STDIO),
+      })
+      expect(result.rollback.kind).toBe('not-needed')
+      expect(rec.mcpCalls).toEqual([])
+      expect(rec.io).toEqual([])
+      expect(stages).not.toContain('collision-check')
+      expect(stages).not.toContain('lockfile-write')
+      expect(snapshot(rec.documentPath)).toEqual(before)
+    })
+
+    test(`${mode}: a declared server missing from the lock is unexpected and is not appended`, async () => {
+      await seed()
+      relock04([])
+      const before = snapshot(mcpAdapter('rec').documentPath)
+
+      const { result, rec } = await attempt(frozen)
+
+      if (result.ok) expect.unreachable()
+      expect(result.failure).toEqual({
+        code: 'RECONCILE_SERVER_IDENTITY',
+        facet: 'alpha',
+        missing: [],
+        unexpected: ['filesystem'],
+      })
+      expect(rec.mcpCalls).toEqual([])
+      expect(snapshot(rec.documentPath)).toEqual(before)
+    })
+
+    test(`${mode}: a locked server the content does not declare is missing`, async () => {
+      await seed()
+      relock04([
+        authored('filesystem', computeMcpServerFingerprint(STDIO)),
+        authored('gone', computeMcpServerFingerprint(HTTP)),
+      ])
+
+      const { result } = await attempt(frozen)
+
+      if (result.ok) expect.unreachable()
+      expect(result.failure).toEqual({
+        code: 'RECONCILE_SERVER_IDENTITY',
+        facet: 'alpha',
+        missing: ['gone'],
+        unexpected: [],
+      })
+    })
+
+    test(`${mode}: a matching inventory reproduces`, async () => {
+      await seed()
+      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+      const lockBefore = readIfPresent(join(projectRoot, 'facets.lock'))
+
+      const { result } = await attempt(frozen)
+
+      if (!result.ok) expect.unreachable()
+      if (frozen) expect(readIfPresent(join(projectRoot, 'facets.lock'))).toBe(lockBefore)
+    })
+  }
+
+  describe('ordering against work the project genuinely requires', () => {
+    /**
+     * A project where a run that passed reconciliation would have to clean up
+     * an owned asset (`old` was dropped), ask for MCP approval (`beta` brings
+     * a new server), and — with `collide` — resolve a skill collision.
+     */
+    async function seedPendingWork(collide: boolean): Promise<string> {
+      await seed({
+        facets: {
+          alpha: serverFixture('alpha', 'filesystem', STDIO),
+          old: skillFixture('old', 'review'),
+        },
+      })
+      const ownedAsset = join(projectRoot, '.rec', 'skills', 'review.md')
+      expect(existsSync(ownedAsset)).toBe(true)
+
+      writeManifest({
+        facets: {
+          alpha: serverFixture('alpha', 'filesystem', STDIO),
+          beta: serverFixture('beta', 'docs', HTTP),
+          ...(collide ? { gamma: skillFixture('gamma', 'planner'), delta: skillFixture('delta', 'planner') } : {}),
+        },
+      })
+      return ownedAsset
+    }
+
+    test('control: the pending cleanup and consent are real', async () => {
+      const ownedAsset = await seedPendingWork(false)
+      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+
+      const { result, prompts } = await attemptNormal()
+
+      if (!result.ok) expect.unreachable()
+      expect(prompts.consent).toBe(1)
+      expect(existsSync(ownedAsset)).toBe(false)
+    })
+
+    test('control: the pending collision is real', async () => {
+      await seedPendingWork(true)
+      relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+
+      const { result, prompts } = await attemptNormal()
+
+      if (result.ok) expect.unreachable()
+      expect(prompts.collision).toBe(1)
+    })
+
+    test('a mismatch refuses before the cleanup, the consent, and the collision prompt', async () => {
+      const ownedAsset = await seedPendingWork(true)
+      relock04([authored('filesystem', OTHER_FINGERPRINT)])
+      const before = snapshot(mcpAdapter('rec').documentPath)
+      const assetBefore = readIfPresent(ownedAsset)
+
+      const { result, rec, stages, prompts } = await attemptNormal()
+
+      if (result.ok) expect.unreachable()
+      expect(result.failure.code).toBe('RECONCILE_SERVER_FINGERPRINT')
+      expect(result.rollback.kind).toBe('not-needed')
+      expect(prompts).toEqual({ collision: 0, consent: 0 })
+      expect(rec.mcpCalls).toEqual([])
+      expect(rec.io).toEqual([])
+      expect(stages).not.toContain('collision-check')
+      expect(stages).not.toContain('drift-removal')
+      expect(readIfPresent(ownedAsset)).toBe(assetBefore)
+      expect(snapshot(rec.documentPath)).toEqual(before)
+    })
+  })
+
+  test('an omitted record with a changed fingerprint fails exactly like an active one', async () => {
+    const source = serverFixture('alpha', 'filesystem', STDIO)
+    await seed({
+      manifestVersion: 0.2,
+      facets: { alpha: { source, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+    })
+    relock04([{ name: 'filesystem', fingerprint: OTHER_FINGERPRINT, materialization: { kind: 'omitted' } }])
+
+    const { result, rec } = await attemptNormal()
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('RECONCILE_SERVER_FINGERPRINT')
+    expect(rec.mcpCalls).toEqual([])
+  })
+
+  test('changing an alias at unchanged content is intent, not a content mismatch', async () => {
+    const source = serverFixture('alpha', 'filesystem', STDIO)
+    await seed()
+    relock04([authored('filesystem', computeMcpServerFingerprint(STDIO))])
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source, materialization: { servers: { filesystem: { kind: 'aliased', as: 'project-fs' } } } },
+      },
+    })
+
+    const { result, rec } = await attemptNormal()
+
+    if (!result.ok) expect.unreachable()
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ 'project-fs': STDIO })
+  })
+
+  test('a content edit at the same version is not treated as a same-integrity mismatch', async () => {
+    await seed()
+    // Stale on purpose: wrong name set and wrong fingerprint for the old content.
+    relock04([authored('gone', OTHER_FINGERPRINT)])
+    const edited: McpServerDeclaration = { type: 'stdio', command: 'other-mcp' }
+    serverFixture('alpha', 'filesystem', edited)
+
+    const { result, rec, prompts } = await attemptNormal()
+
+    if (!result.ok) expect.unreachable()
+    // The new declaration is what this run planned and asked about. Whether
+    // its inventory is persisted is the writer's job, which is still `0.3`.
+    expect(prompts.consent).toBe(1)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: edited })
+  })
+
+  test('a legacy servers lookalike is not a reconciliation baseline', async () => {
+    await seed()
+    const path = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(path, 'utf8'))
+    expect(lock.lockfileVersion).toBe(0.3)
+    lock.facets.alpha.servers = [authored('gone', OTHER_FINGERPRINT)]
+    writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
+
+    const { result } = await attemptNormal()
+
+    if (!result.ok) expect.unreachable()
   })
 })

@@ -5,6 +5,7 @@ import { describeRollbackIssue, hasPreservedConflicts } from './install-outcome.
 import {
   formatMcpConsentReport,
   formatMcpDocumentOverlapReport,
+  formatServerInventoryMismatchReport,
   formatUnsupportedMcpAdaptersReport,
 } from './mcp-report.ts'
 
@@ -44,6 +45,12 @@ export function formatInstallFailureDetail(failure: RunInstallFailure, rollback:
       break
     case 'MCP_DOCUMENT_OVERLAP':
       detail = `${formatMcpDocumentOverlapReport(failure.overlaps)}\n`
+      break
+    case 'RECONCILE_SERVER_IDENTITY':
+    case 'RECONCILE_SERVER_FINGERPRINT':
+      // Without this the only trace on stderr — and in `update --json` — is the
+      // failure code, which names no facet and no server.
+      detail = `${formatServerInventoryMismatchReport(failure)}\n`
       break
     default:
       detail = formatMaterializationDetail(failure)

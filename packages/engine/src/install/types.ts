@@ -4,6 +4,7 @@ import type {
   CollisionGroup,
   IntegrityFailure,
   MaterializationDisposition,
+  McpServerFingerprint,
   ProjectAssetOverride,
   ServerCollisionGroup,
   SupportedLockfile,
@@ -548,7 +549,7 @@ export type RunInstallFailure =
   | { code: 'UPDATE_PLAN_STALE'; files: NonEmptyArray<'manifest' | 'lockfile'> }
   /**
    * Pre-materialization reconciliation (design D10, task 9.3) found the
-   * `0.2` lockfile entry disagreeing with the freshly-derived verified
+   * locked entry disagreeing with the freshly-derived verified
    * asset plan. Every variant is path- or identity-specific so the CLI can
    * name the exact divergence without parsing a message. Reconciliation
    * runs BEFORE any adapter write, so a mismatch leaves all state
@@ -585,6 +586,35 @@ export type RunInstallFailure =
       path: string
       expected: string
       actual: string
+    }
+  /**
+   * A `0.4` lockfile entry reproduced at the SAME facet integrity records a
+   * different authored server set than the verified content declares.
+   * `missing` is locked but not declared; `unexpected` is declared but not
+   * locked. Both sorted. Omitted servers count: the inventory is the complete
+   * authored set, not what is configured.
+   *
+   * Carries names only — never a declaration value.
+   */
+  | {
+      code: 'RECONCILE_SERVER_IDENTITY'
+      facet: string
+      missing: ReadonlyArray<string>
+      unexpected: ReadonlyArray<string>
+    }
+  /**
+   * A `0.4` lockfile entry reproduced at the SAME facet integrity records a
+   * fingerprint for an authored server that differs from the canonical
+   * fingerprint of its verified declaration. `expected` is the locked value,
+   * `actual` the one recomputed from content. Fingerprints only — never the
+   * declaration they were computed from.
+   */
+  | {
+      code: 'RECONCILE_SERVER_FINGERPRINT'
+      facet: string
+      authoredName: string
+      expected: McpServerFingerprint
+      actual: McpServerFingerprint
     }
   /**
    * A persisted or resolver-supplied alias does not satisfy the asset-name

@@ -57,6 +57,9 @@ async function manifestFor(fixtureDir: string): Promise<CurrentBuildManifest> {
 }
 
 mock.module('../../registry/resolve-metadata.ts', () => ({
+  // Re-exported through the registry barrel, so a mock without it cannot load
+  // when this file runs on its own.
+  MAX_REGISTRY_METADATA_SPECIFIERS: 100,
   resolveRegistryMetadataBatch: async (
     specs: ReadonlyArray<{ name: string; version: { kind: string; major?: number; minor?: number; patch?: number } }>,
   ) => {
@@ -99,7 +102,10 @@ mock.module('../../registry/download.ts', () => ({
 const { runInstall } = await import('../run-install.ts')
 const { loadInstalledAdapters } = await import('../../adapters/loader.ts')
 const { runBuildPipeline } = await import('../../build/pipeline.ts')
-const { LOCKFILE_VERSION_0_2 } = await import('@agent-facets/protocol')
+const { LOCKFILE_VERSION_0_2, LOCKFILE_VERSION_0_4, computeMcpServerFingerprint } = await import(
+  '@agent-facets/protocol'
+)
+type McpServerFingerprint = import('@agent-facets/protocol').McpServerFingerprint
 
 /** Build a fixture and return the genuine content-hash the install pipeline
  *  would compute for it — so a satisfying lock entry can carry a real
@@ -626,4 +632,102 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBytes)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
+})
+
+describe('runInstall — registry reproduction reconciles the 0.4 server inventory', () => {
+  const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] } as const
+  const WRONG: McpServerFingerprint = `sha256:${'9'.repeat(64)}`
+
+  /** The planning-skill fixture, plus one server declaration. */
+  function buildServerFixture(name: string, version: string): string {
+    const repo = buildFixture(fakeHome, name, version)
+    const manifest = JSON.parse(readFileSync(join(repo, 'facet.json'), 'utf8'))
+    writeFileSync(join(repo, 'facet.json'), JSON.stringify({ ...manifest, servers: { filesystem: STDIO } }))
+    return repo
+  }
+
+  /** An explicit `0.4` lockfile with genuine asset records and the given inventory. */
+  async function writeLock04(fixture: string, version: string, fingerprint: string): Promise<string> {
+    const { integrity, skillIntegrity } = await realRecords(fixture)
+    const bytes = `${JSON.stringify(
+      {
+        lockfileVersion: LOCKFILE_VERSION_0_4,
+        facets: {
+          cowsay: {
+            source: taggedSource(version),
+            version,
+            integrity,
+            assets: [
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'planning',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'skills/planning/SKILL.md', integrity: skillIntegrity }],
+              },
+            ],
+            servers: [{ name: 'filesystem', fingerprint, materialization: { kind: 'authored' } }],
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`
+    writeFileSync(join(projectRoot, 'facets.lock'), bytes)
+    return bytes
+  }
+
+  for (const [mode, run] of [
+    ['normal', install],
+    ['frozen', installFrozen],
+  ] as const) {
+    test(`${mode}: a cold download and a warm cache report the same mismatch`, async () => {
+      const fixture = buildServerFixture('cowsay', '1.0.0')
+      fixtureForVersion = (v) => (v === '1.0.0' ? fixture : null)
+      writeFacets({ cowsay: '1.0.0' })
+      const lockBefore = await writeLock04(fixture, '1.0.0', WRONG)
+
+      // Cold: nothing cached, so the locked version is downloaded and verified.
+      const cold = await run()
+      if (cold.ok) expect.unreachable()
+      expect(resolveRequests).toEqual([{ name: 'cowsay', version: '1.0.0' }])
+      expect(cold.failure).toEqual({
+        code: 'RECONCILE_SERVER_FINGERPRINT',
+        facet: 'cowsay',
+        authoredName: 'filesystem',
+        expected: WRONG,
+        actual: computeMcpServerFingerprint(STDIO),
+      })
+      expect(cold.rollback.kind).toBe('not-needed')
+
+      // Warm: the verified slot answers without any registry request, and the
+      // check is exactly as strict.
+      resolveRequests = []
+      const warm = await run()
+      if (warm.ok) expect.unreachable()
+      expect(resolveRequests).toEqual([])
+      expect(warm.failure).toEqual(cold.failure)
+
+      expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+      expect(existsSync(join(projectRoot, '.test-adapter'))).toBe(false)
+    })
+
+    test(`${mode}: a matching inventory passes reconciliation on both paths`, async () => {
+      const fixture = buildServerFixture('cowsay', '1.0.0')
+      fixtureForVersion = (v) => (v === '1.0.0' ? fixture : null)
+      writeFacets({ cowsay: '1.0.0' })
+      await writeLock04(fixture, '1.0.0', computeMcpServerFingerprint(STDIO))
+
+      // The fixture adapter cannot configure MCP, so the run stops at the next
+      // gate — which is only reachable once reconciliation has passed. The
+      // request count tells the two acquisition paths apart.
+      for (const expectedRequests of [1, 0]) {
+        resolveRequests = []
+        const result = await run()
+        if (result.ok) expect.unreachable()
+        expect(resolveRequests).toHaveLength(expectedRequests)
+        expect(result.failure.code).toBe('MCP_ADAPTERS_UNSUPPORTED')
+      }
+    })
+  }
 })

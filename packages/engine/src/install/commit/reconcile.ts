@@ -1,4 +1,12 @@
-import type { SupportedLockfileFacet } from '@agent-facets/protocol'
+import {
+  type AuthoredServer,
+  compareCodeUnits,
+  computeMcpServerFingerprint,
+  LOCKFILE_VERSION_0_4,
+  type SupportedLockfile,
+  type SupportedLockfileFacet,
+} from '@agent-facets/protocol'
+import { ownEntry } from '../own-entry.ts'
 import type { RunInstallFailure } from '../types.ts'
 import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
 
@@ -29,11 +37,11 @@ import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
  *     chain's registry three-check and git one-check prove the content
  *     reproduces the locked facet integrity). This function adds the
  *     per-asset and per-file agreement the chain integrity does not express.
- *   - It only runs when BOTH a `previous` locked entry and a freshly-derived
- *     `plan` are present. A fresh add has no prior entry to reconcile
- *     against. A frozen reproduction derives no plan (the entry is inherited
- *     verbatim) and is gated by the frozen drift preflight instead.
- *   - Every supported locked entry (`0.2` and `0.3`) carries per-file
+ *   - It only runs when a `previous` locked entry exists. A fresh add has no
+ *     prior entry to reconcile against. Every resolution path — frozen or
+ *     not, warm cache or cold — derives a verified plan, so reproduction is
+ *     checked the same way regardless of how the content was obtained.
+ *   - Every supported locked entry (`0.2`, `0.3`, and `0.4`) carries per-file
  *     records, so both asset-identity and per-file agreement are always
  *     checked. There is no longer a migration case that pins no file hashes:
  *     the withdrawn `1` format, which was the only identity-only shape, is
@@ -101,6 +109,66 @@ export function reconcileLockedAgainstPlan(
           expected: record.integrity,
           actual: recomputed,
         }
+      }
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Pre-materialization server-inventory reconciliation (design D4).
+ *
+ * When a facet is reproduced at the integrity its `0.4` entry pins, the
+ * entry's complete authored server inventory — omitted records included —
+ * must agree with the verified declarations: the same authored-name set, and
+ * each locked fingerprint equal to the canonical fingerprint recomputed from
+ * the declaration. A disagreement means the locked metadata no longer
+ * describes the artifact it pins, and it is reported rather than silently
+ * regenerated.
+ *
+ * Takes the whole version-tagged document rather than an entry because only
+ * the document's exact version says whether an inventory exists at all. A
+ * `0.2` or `0.3` entry may carry an extension named `servers`; it is never
+ * treated as records, and legacy reproduction is not reconciled here.
+ *
+ * Dispositions are deliberately not compared. They are project intent, and a
+ * normal install that changes an alias or omission at unchanged content is
+ * legitimate; frozen consistency and removal refinement constrain intent.
+ */
+export function reconcileLockedServerInventory(
+  facet: string,
+  previousLockfile: SupportedLockfile,
+  currentIntegrity: string,
+  servers: ReadonlyArray<AuthoredServer>,
+): RunInstallFailure | undefined {
+  if (previousLockfile.lockfileVersion !== LOCKFILE_VERSION_0_4) return undefined
+  const previous = ownEntry(previousLockfile.facets, facet)
+  if (previous === undefined) return undefined
+  if (currentIntegrity !== previous.integrity) return undefined
+
+  const lockedNames = new Set(previous.servers.map((record) => record.name))
+  const verifiedNames = new Set(servers.map((server) => server.name))
+  const missing = [...lockedNames].filter((name) => !verifiedNames.has(name)).sort(compareCodeUnits)
+  const unexpected = [...verifiedNames].filter((name) => !lockedNames.has(name)).sort(compareCodeUnits)
+  if (missing.length > 0 || unexpected.length > 0) {
+    return { code: 'RECONCILE_SERVER_IDENTITY', facet, missing, unexpected }
+  }
+
+  const verifiedByName = new Map(servers.map((server) => [server.name, server.declaration]))
+  const lockedInOrder = [...previous.servers].sort((a, b) => compareCodeUnits(a.name, b.name))
+  for (const record of lockedInOrder) {
+    const declaration = verifiedByName.get(record.name)
+    // Name-set agreement above guarantees a verified counterpart exists.
+    if (declaration === undefined) continue
+    const actual = computeMcpServerFingerprint(declaration)
+    if (record.fingerprint !== actual) {
+      return {
+        code: 'RECONCILE_SERVER_FINGERPRINT',
+        facet,
+        authoredName: record.name,
+        expected: record.fingerprint,
+        actual,
       }
     }
   }

@@ -91,8 +91,8 @@ export {
   validateFacetManifest,
   validateLegacyFacetManifest,
 } from './loaders/facet.ts'
-// versioned lockfile parsing (exact lockfileVersion dispatch — `0.2` vs
-// current `0.3`, no numeric ordering, no shape-sniffing)
+// versioned lockfile parsing (exact lockfileVersion dispatch across `0.2`,
+// `0.3`, and `0.4` — no numeric ordering, no shape-sniffing)
 export type {
   LockfileParseFailure,
   ParsedLockfile,
@@ -146,6 +146,17 @@ export {
   SKILL_PRIMARY_FILE,
   skillRootPath,
 } from './materialization/identity.ts'
+// locked MCP inventory — the recorded selected server set and every
+// contributing origin, derived from a `0.4` lockfile alone with no I/O.
+export type {
+  DeriveLockedMcpInventoryResult,
+  LockedMcpAuthoredServer,
+  LockedMcpCollisionGroup,
+  LockedMcpCollisionMember,
+  LockedMcpOrigin,
+  LockedMcpServer,
+} from './materialization/locked-inventory.ts'
+export { deriveLockedMcpInventory } from './materialization/locked-inventory.ts'
 // materialization namespaces (design D9) — the single source of truth for
 // which asset types compete for the same names. Skills and commands share
 // one namespace; agents occupy another.
@@ -179,7 +190,15 @@ export { overrideFor, overrideGroupKey, overridesForType, planMaterialization } 
 export type {
   AuthoredServer,
   InvalidServerAlias,
+  LockedServerClaimant,
+  LockedServerCollisionGroup,
+  LockedServerCollisionMember,
+  LockedServerContribution,
+  LockedServerRecord,
   McpServerIdentity,
+  PlanLockedServerInventoryResult,
+  PlannedLockedServer,
+  PlannedLockedServerConfiguration,
   PlannedServer,
   PlannedServerConfiguration,
   PlanServerMaterializationResult,
@@ -189,12 +208,17 @@ export type {
   ServerContribution,
   StaleServerOverride,
 } from './materialization/servers.ts'
-export { mcpServerKey, planServerMaterialization } from './materialization/servers.ts'
+export { mcpServerKey, planLockedServerInventory, planServerMaterialization } from './materialization/servers.ts'
 // canonical MCP declaration fingerprint — the semantic identity the receipt
 // stores in place of the declaration, so prior approval can be proven without
 // recording a command, URL, or environment data.
 export type { McpServerFingerprint } from './mcp/fingerprint.ts'
-export { canonicalMcpServerEncoding, computeMcpServerFingerprint, isMcpServerFingerprint } from './mcp/fingerprint.ts'
+export {
+  canonicalMcpServerEncoding,
+  computeMcpServerFingerprint,
+  isMcpServerFingerprint,
+  MCP_SERVER_FINGERPRINT_ENCODING,
+} from './mcp/fingerprint.ts'
 // one clone-and-freeze for declarations, so a planned result never shares
 // mutable structure with the input it was derived from.
 export { freezeMcpServerDeclaration } from './mcp/freeze.ts'
@@ -236,7 +260,7 @@ export { LegacyFacetManifestSchema } from './schemas/facet-manifest-legacy.ts'
 // ownership) validate scopes with the same grammar.
 export type { FacetName, FacetNameResult, SlugResult } from './schemas/facet-name.ts'
 export { parseFacetName, parseSlug, validateFacetName } from './schemas/facet-name.ts'
-// lockfile schemas — one per exact format version (`0.2`, `0.3`), plus
+// lockfile schemas — one per exact format version (`0.2`, `0.3`, `0.4`), plus
 // `Current*` aliases tracking whichever version a normal install writes.
 // Readers stay broader than the writer; the `Supported*` aggregate
 // (exported with the loader) is derived from those exact readers, never
@@ -251,16 +275,23 @@ export type {
   Lockfile03,
   Lockfile03AssetEntry,
   Lockfile03Facet,
+  Lockfile04,
+  Lockfile04AssetEntry,
+  Lockfile04Facet,
+  Lockfile04ServerEntry,
   LockfileFileRecord,
   LockfileSource,
 } from './schemas/lockfile.ts'
 export {
   CURRENT_LOCKFILE_VERSION,
   CurrentLockfileSchema,
+  LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   Lockfile02Schema,
   Lockfile03Schema,
+  Lockfile04Schema,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from './schemas/lockfile.ts'
 // materialization dispositions — the three-arm tagged shape (authored /
