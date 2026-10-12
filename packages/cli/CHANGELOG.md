@@ -1,12 +1,22 @@
 # agent-facets
 
+## 0.36.0
+
+### Minor Changes
+
+- [#595](https://github.com/agent-facets/facets/pull/595) [`68e8df8`](https://github.com/agent-facets/facets/commit/68e8df8260ebbbb609c2db09ed920f7ba0a4a926) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **Breaking:** `facet install`, `add`, `update`, and `remove` now write lockfile `0.4`, which records every facet's MCP servers by name, fingerprint, and alias or omission. Earlier CLIs cannot read it. Upgrade every CLI that shares a project, then run one plain `facet install` to migrate and commit `facets.lock`.
+    `facet install --frozen-lockfile` now checks server intent before downloading anything. With a `0.4` lockfile, a server collision, a stale server override, or a server alias or omission that differs from the lockfile fails immediately. With a `0.2` or `0.3` lockfile, any server alias or omission is refused with a request to migrate. The message names the format that can record the choice (`0.3` for a text-asset choice under `0.2`, `0.4` for a server choice), while a normal install always writes `0.4`. Older lockfiles without server overrides still reproduce unchanged.
+    A facet whose recorded server names or fingerprints disagree with its verified content now fails with `RECONCILE_SERVER_IDENTITY` or `RECONCILE_SERVER_FINGERPRINT`. Restore the lockfile from a trusted revision; re-running does not regenerate it.
+    The first `facet remove` that keeps facets under a `0.2` or `0.3` lockfile resolves and verifies them to write `0.4`, which may need the network or MCP approval. A failed migration changes nothing and reports the underlying cause. Removing every facet needs no content.
+    MCP approval, `--accept-mcp`, takeover prompts, and deletion authority are unchanged and stay machine-local; a lockfile never grants them. The Adapter SDK API is unchanged.
+
 ## 0.35.0
 
 ### Minor Changes
 
 - [#587](https://github.com/agent-facets/facets/pull/587) [`22ab7a5`](https://github.com/agent-facets/facets/commit/22ab7a589467bf5b3be75f4b2c797b9f2a1bc177) Thanks [@jimador](https://github.com/jimador)! - Add browser sign-in with `facet login --browser` and manual device verification with `facet login --no-browser` on macOS and Linux. Registry commands renew and verify browser sessions before use; personal access tokens keep priority over browser credentials.
-    Use `facet login --token` in a terminal or `FACET_TOKEN` for CI and Windows. Browser credentials are stored separately from personal access tokens and are bound to their registry.
-    `facet logout` now confirms remote browser session revocation before local cleanup. Use `facet logout --local` for local cleanup with remote revocation unverified. Personal access token logout remains local removal, and environment tokens must be unset separately.
+  Use `facet login --token` in a terminal or `FACET_TOKEN` for CI and Windows. Browser credentials are stored separately from personal access tokens and are bound to their registry.
+  `facet logout` now confirms remote browser session revocation before local cleanup. Use `facet logout --local` for local cleanup with remote revocation unverified. Personal access token logout remains local removal, and environment tokens must be unset separately.
 
 ## 0.34.0
 
