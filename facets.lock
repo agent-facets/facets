@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 0.3,
+  "lockfileVersion": 0.4,
   "facets": {
     "@agentfacets/address-pr-feedback": {
       "source": {
@@ -51,7 +51,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "@agentfacets/graphite-submit-branch": {
       "source": {
@@ -103,7 +104,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "@agentfacets/openspec-adversary": {
       "source": {
@@ -239,7 +241,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "@agentfacets/review-openspec-design": {
       "source": {
@@ -277,7 +280,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "cowsay": {
       "source": {
@@ -343,7 +347,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "graphite": {
       "source": {
@@ -367,7 +372,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "openspec": {
       "source": {
@@ -741,7 +747,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     },
     "viper-plans": {
       "source": {
@@ -821,6 +828,15 @@
             }
           ]
         }
+      ],
+      "servers": [
+        {
+          "name": "viper-plans",
+          "fingerprint": "sha256:7550b39439e8eb891d0c99e829c144de8633f1c34001d7d1556f238f76a34be4",
+          "materialization": {
+            "kind": "authored"
+          }
+        }
       ]
     },
     "worktrunk": {
@@ -895,7 +911,8 @@
             }
           ]
         }
-      ]
+      ],
+      "servers": []
     }
   }
 }
