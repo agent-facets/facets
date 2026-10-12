@@ -3,9 +3,11 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
+import { planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { CurrentBuildManifest, ProjectFacetEntry } from '@agent-facets/protocol'
 import { SUPPORTED_ADAPTER_APIS } from '../../adapters/api-compatibility.ts'
+import { recordingMcpCapability } from './helpers/mcp-adapter.ts'
 
 /**
  * Tests for `runInstall`'s manifest-vs-lockfile reconciliation.
@@ -480,6 +482,117 @@ describe('runInstall — frozen-lockfile mode', () => {
     expect(resolveRequests).toEqual([])
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+
+  // Moving a registry facet to a git fork is a source change like any other.
+  // It used to pass coverage, because only git and local entries were compared
+  // and a registry entry has no URL or path. Resolution then dropped the stale
+  // anchor, so the fork's content was never reconciled against what had been
+  // locked — and an alias the fork no longer declares took its receipt-owned
+  // configuration down with it, under a lockfile that still recorded it.
+  test('fails on a registry facet moved to git, before resolving or touching anything', async () => {
+    const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] } as const
+    const fixture = buildFixture(fakeHome, 'cowsay', '1.0.0')
+    const facetJson = JSON.parse(readFileSync(join(fixture, 'facet.json'), 'utf8'))
+    writeFileSync(join(fixture, 'facet.json'), JSON.stringify({ ...facetJson, servers: { filesystem: STDIO } }))
+    fixtureForVersion = (v) => (v === '1.0.0' ? fixture : null)
+
+    const io: string[] = []
+    const mcp = recordingMcpCapability(() => join(projectRoot, '.rec', 'mcp.json'))
+    const asset = (req: { projectRoot: string; assetType: string; name: string }) =>
+      join(req.projectRoot, '.rec', `${req.assetType}s`, `${req.name}.md`)
+    const adapter: Adapter = {
+      name: 'rec',
+      apiVersion: ADAPTER_API_VERSION,
+      mcpServers: mcp.capability,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      assets: {
+        async planInstall(req) {
+          io.push(`install:${req.name}`)
+          return planSingleFileInstall(
+            { file: asset(req), boundary: join(req.projectRoot, '.rec') },
+            req.content,
+            req.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(req) {
+          io.push(`delete:${req.name}`)
+          return planSingleFileRemoval({ file: asset(req), boundary: join(req.projectRoot, '.rec') })
+        },
+      },
+    }
+
+    /** A `0.2` manifest — the version that can carry a server override. */
+    const writeManifest = (source: string) =>
+      writeFileSync(
+        join(projectRoot, 'facets.json'),
+        `${JSON.stringify(
+          {
+            manifestVersion: 0.2,
+            facets: { cowsay: { source, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
+          },
+          null,
+          2,
+        )}\n`,
+      )
+
+    // A real installed state: registry-locked, the server aliased to `fs`, and
+    // this machine's receipt claiming the native entry it wrote.
+    writeManifest('1.0.0')
+    const seeded = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: { kind: 'preapproved' } },
+    })
+    if (!seeded.ok) expect.unreachable(`test setup: seeding install failed with ${seeded.failure.code}`)
+    const locked = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(locked.lockfileVersion).toBe(LOCKFILE_VERSION_0_4)
+    expect(locked.facets.cowsay.source.kind).toBe('registry')
+    expect(locked.facets.cowsay.servers[0].materialization).toEqual({ kind: 'aliased', as: 'fs' })
+    expect(JSON.parse(readFileSync(join(projectRoot, '.rec', 'mcp.json'), 'utf8'))).toEqual({ fs: STDIO })
+
+    const FORK = 'https://github.com/agent-facets/cowsay-fork.git'
+    writeManifest(FORK)
+    const { receiptPath } = await import('../receipt.ts')
+    const files = () => ({
+      manifest: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lockfile: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+      native: readFileSync(join(projectRoot, '.rec', 'mcp.json'), 'utf8'),
+      asset: readFileSync(join(projectRoot, '.rec', 'skills', 'planning.md'), 'utf8'),
+    })
+    const before = files()
+    resolveRequests = []
+    io.length = 0
+    mcp.calls.length = 0
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: true },
+      onStage: (event) => {
+        // Fail here rather than let a regression reach out to clone the fork.
+        if (event.kind === 'facet-start') throw new Error(`frozen refusal must precede resolving ${event.facet}`)
+      },
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({
+      code: 'LOCKFILE_DRIFT',
+      facets: [
+        {
+          name: 'cowsay',
+          reason: 'source-changed',
+          manifestSpec: FORK,
+          lockedSource: locked.facets.cowsay.source.registry,
+        },
+      ],
+    })
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(resolveRequests).toEqual([])
+    expect(io).toEqual([])
+    expect(mcp.calls).toEqual([])
+    expect(files()).toEqual(before)
   })
 
   test('fails when no lockfile exists', async () => {
