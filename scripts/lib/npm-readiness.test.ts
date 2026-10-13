@@ -22,6 +22,48 @@ function steppingClock(start = 1_000_000) {
   }
 }
 
+const CACHE_HEADERS = {
+  'cache-control': 'public, max-age=300',
+  age: '53',
+  'cf-cache-status': 'HIT',
+  'last-modified': 'Mon, 12 Oct 2026 19:06:36 GMT',
+}
+
+const CACHE_DIAGNOSTICS = {
+  cacheControl: 'public, max-age=300',
+  age: '53',
+  cacheStatus: 'HIT',
+  lastModified: 'Mon, 12 Oct 2026 19:06:36 GMT',
+}
+
+/** Capture the probe's deadline timer so a test expires it at a chosen moment instead of waiting. */
+function controlDeadline() {
+  let expire: (() => void) | undefined
+  spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void) => {
+    expire = callback
+    return 0
+  }) as unknown as typeof setTimeout)
+  spyOn(globalThis, 'clearTimeout').mockImplementation(() => {})
+  return {
+    expire: () => {
+      if (!expire) expect.unreachable()
+      expire()
+    },
+  }
+}
+
+/** A body that never delivers data, recording whether it was cancelled. */
+function stalledBody(onCancel: () => void | PromiseLike<void> = () => {}) {
+  const state = { cancelled: false }
+  const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      state.cancelled = true
+      return onCancel()
+    },
+  })
+  return { stream, state }
+}
+
 describe('packumentUrl', () => {
   test('escapes the slash in a scoped name the way npm does', () => {
     expect(packumentUrl(PKG)).toBe('https://registry.npmjs.org/@agent-facets%2fcli-linux-x64')
@@ -168,7 +210,8 @@ describe('probeVersion', () => {
     expect(result.diagnostics.status).toBeNull()
   })
 
-  test('aborts and reports a timeout when the response never arrives', async () => {
+  test('aborts and reports a timeout with no response when headers never arrive', async () => {
+    const deadline = controlDeadline()
     let seenSignal: AbortSignal | undefined
     spyOn(io.npm, 'fetchPackument').mockImplementation(
       (_url: string, signal: AbortSignal) =>
@@ -178,20 +221,114 @@ describe('probeVersion', () => {
         }),
     )
 
-    const result = await probeVersion(PKG, VERSION, { timeoutMs: 5 })
+    const probe = probeVersion(PKG, VERSION, { timeoutMs: 10_000 })
+    deadline.expire()
+    const result = await probe
 
     if (result.outcome !== 'timeout') expect.unreachable()
-    expect(result.timeoutMs).toBe(5)
+    expect(result.timeoutMs).toBe(10_000)
+    expect(result.diagnostics.status).toBeNull()
     expect(seenSignal?.aborted).toBe(true)
   })
 
-  test('times out when the body read stalls, even if the signal is ignored', async () => {
-    const stalled = new ReadableStream<Uint8Array>({ start() {} })
-    spyOn(io.npm, 'fetchPackument').mockResolvedValue(new Response(stalled, { status: 200 }))
+  test('keeps the response diagnostics when the body read stalls, even if the signal is ignored', async () => {
+    const deadline = controlDeadline()
+    let bodyRequested: () => void = () => {}
+    const reading = new Promise<void>((resolve) => {
+      bodyRequested = resolve
+    })
+    // highWaterMark 0: pull runs only once the probe starts reading the body,
+    // which is after it has seen the headers.
+    const stalled = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          bodyRequested()
+          return new Promise(() => {})
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    spyOn(io.npm, 'fetchPackument').mockResolvedValue(new Response(stalled, { status: 200, headers: CACHE_HEADERS }))
 
-    const result = await probeVersion(PKG, VERSION, { timeoutMs: 5 })
+    const probe = probeVersion(PKG, VERSION, { timeoutMs: 10_000, now: steppingClock() })
+    await reading
+    deadline.expire()
+    const result = await probe
 
-    expect(result.outcome).toBe('timeout')
+    expect(result).toEqual({
+      outcome: 'timeout',
+      timeoutMs: 10_000,
+      diagnostics: { durationMs: 25, status: 200, ...CACHE_DIAGNOSTICS },
+    })
+    expect(describeProbe(result)).toBe(
+      'request timed out after 10000ms [HTTP 200, 25ms, cache HIT, age 53s, public, max-age=300, ' +
+        'modified Mon, 12 Oct 2026 19:06:36 GMT]',
+    )
+  })
+
+  test('keeps the response diagnostics when the body read fails', async () => {
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('connection reset mid-body'))
+      },
+    })
+    spyOn(io.npm, 'fetchPackument').mockResolvedValue(new Response(failing, { status: 200, headers: CACHE_HEADERS }))
+
+    const result = await probeVersion(PKG, VERSION, { timeoutMs: 10_000, now: steppingClock() })
+
+    expect(result).toEqual({
+      outcome: 'network-error',
+      detail: 'connection reset mid-body',
+      diagnostics: { durationMs: 25, status: 200, ...CACHE_DIAGNOSTICS },
+    })
+    expect(describeProbe(result)).not.toContain('no response')
+  })
+
+  describe('unread bodies', () => {
+    test.each([
+      { status: 404, outcome: 'version-absent' },
+      { status: 429, outcome: 'rate-limited' },
+      { status: 503, outcome: 'http-error' },
+    ])('cancels a stalled $status body and aborts the request', async ({ status, outcome }) => {
+      const { stream, state } = stalledBody()
+      let seenSignal: AbortSignal | undefined
+      spyOn(io.npm, 'fetchPackument').mockImplementation(async (_url: string, signal: AbortSignal) => {
+        seenSignal = signal
+        return new Response(stream, { status, headers: { 'retry-after': '120' } })
+      })
+
+      const result = await probeVersion(PKG, VERSION, { timeoutMs: 10_000 })
+
+      expect(result.outcome).toBe(outcome)
+      expect(result.diagnostics.status).toBe(status)
+      if (result.outcome === 'rate-limited') expect(result.retryAfterMs).toBe(120_000)
+      expect(state.cancelled).toBe(true)
+      expect(seenSignal?.aborted).toBe(true)
+    })
+
+    test('does not wait for a cancellation that never settles', async () => {
+      const { stream, state } = stalledBody(() => new Promise(() => {}))
+      spyOn(io.npm, 'fetchPackument').mockResolvedValue(new Response(stream, { status: 503 }))
+
+      const result = await probeVersion(PKG, VERSION, { timeoutMs: 10_000 })
+
+      if (result.outcome !== 'http-error') expect.unreachable()
+      expect(result.status).toBe(503)
+      expect(state.cancelled).toBe(true)
+    })
+
+    test('keeps the observed outcome when cancellation fails', async () => {
+      const { stream, state } = stalledBody(() => Promise.reject(new Error('cancel failed')))
+      spyOn(io.npm, 'fetchPackument').mockResolvedValue(
+        new Response(stream, { status: 429, headers: { 'retry-after': '60' } }),
+      )
+
+      const result = await probeVersion(PKG, VERSION, { timeoutMs: 10_000 })
+
+      if (result.outcome !== 'rate-limited') expect.unreachable()
+      expect(result.retryAfterMs).toBe(60_000)
+      expect(state.cancelled).toBe(true)
+    })
   })
 })
 

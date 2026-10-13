@@ -61,10 +61,26 @@ export function parseRetryAfter(value: string | null, nowMs: number): number | n
 
 type Fetched = { response: Response; body: string | null }
 
-async function fetchPackument(url: string, signal: AbortSignal): Promise<Fetched> {
+/**
+ * Fetch a packument, handing the response to `onHeaders` as soon as headers
+ * arrive so its diagnostics survive a body read that fails or stalls. Only a
+ * 200 body is read; the caller discards any other.
+ */
+async function fetchPackument(
+  url: string,
+  signal: AbortSignal,
+  onHeaders: (response: Response) => void,
+): Promise<Fetched> {
   const response = await io.npm.fetchPackument(url, signal)
+  onHeaders(response)
   const body = response.status === 200 ? await response.text() : null
   return { response, body }
+}
+
+/** Release a body that will never be read, without waiting on — or failing from — the cancellation. */
+function discardBody(response: Response): void {
+  if (response.body === null || response.bodyUsed) return
+  void response.body.cancel().catch(() => {})
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,6 +133,9 @@ export async function probeVersion(pkg: string, version: string, options: ProbeO
   const now = options.now ?? Date.now
   const started = now()
   const controller = new AbortController()
+  // Set once headers arrive, so a body that fails or stalls is still reported
+  // with the status and cache headers the registry sent.
+  let received: Response | null = null
   let didTimeOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   // Racing against the timer bounds the body read too, even if the fetch
@@ -131,9 +150,12 @@ export async function probeVersion(pkg: string, version: string, options: ProbeO
 
   let fetched: Fetched | null
   try {
-    fetched = await Promise.race([fetchPackument(packumentUrl(pkg), controller.signal), timedOut])
+    const request = fetchPackument(packumentUrl(pkg), controller.signal, (response) => {
+      received = response
+    })
+    fetched = await Promise.race([request, timedOut])
   } catch (error) {
-    const diagnostics = diagnose(null, now() - started)
+    const diagnostics = diagnose(received, now() - started)
     if (didTimeOut) return { outcome: 'timeout', timeoutMs: options.timeoutMs, diagnostics }
     const detail = error instanceof Error ? error.message : String(error)
     return { outcome: 'network-error', detail, diagnostics }
@@ -142,12 +164,18 @@ export async function probeVersion(pkg: string, version: string, options: ProbeO
   }
 
   if (fetched === null) {
-    return { outcome: 'timeout', timeoutMs: options.timeoutMs, diagnostics: diagnose(null, now() - started) }
+    return { outcome: 'timeout', timeoutMs: options.timeoutMs, diagnostics: diagnose(received, now() - started) }
   }
 
   const { response, body } = fetched
   const diagnostics = diagnose(response, now() - started)
   if (response.status === 200 && body !== null) return interpretPackument(pkg, version, body, diagnostics)
+
+  // Only the status and headers matter for any other response. Stop its body
+  // from downloading past the request budget and piling up across polls.
+  discardBody(response)
+  controller.abort()
+
   if (response.status === 404) return { outcome: 'version-absent', diagnostics }
   if (response.status === 429) {
     return {

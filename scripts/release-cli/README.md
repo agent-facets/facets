@@ -136,6 +136,12 @@ is held or blocked. Each result is logged with its HTTP status, duration, and ca
 headers, and "not available yet" is reported separately from rate limiting, timeouts,
 network failures, unexpected statuses, and malformed metadata.
 
+Only a 200 body is read. Any other response is classified from its status and headers
+alone, and its body is cancelled and its request aborted, so an error page cannot keep
+downloading past the request budget or pile up across polls. When headers arrive but
+the body then fails or times out, the log still shows the status and cache headers
+that were received rather than "no response".
+
 Each stage polls under one contract:
 
 - A **20-minute** wall-clock deadline covering requests and waits.
