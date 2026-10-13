@@ -16,15 +16,15 @@ scripts/
 │   ├── build.ts                # Cross-compile 12 platform binaries
 │   ├── publish-platform.ts     # Publish one platform binary package
 │   ├── publish-cli-package.ts  # Synthesize + publish CLI wrapper
-│   ├── finalize.ts             # Orchestrate publish → verify → announce
-│   ├── verify.ts               # Verify CLI packages on npm (retries ~4m15s)
+│   ├── finalize.ts             # Orchestrate wait → publish → wait → announce
+│   ├── verify.ts               # Wait for CLI packages to be available on npm (20m deadline)
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions
 │
 ├── lib/                        # Shared utilities
 │   ├── io/                     # IO adapter (split by domain, nested namespaces)
 │   │   ├── index.ts            # Composes io = { npm, git, gh, circleci, shell, console }
-│   │   ├── npm.ts              # npm CLI commands (pack, publishTarball, view, etc.)
+│   │   ├── npm.ts              # npm CLI commands (pack, publishTarball, view, etc.) + packument fetch
 │   │   ├── git.ts              # git CLI commands
 │   │   ├── github.ts           # GitHub CLI commands
 │   │   ├── circleci.ts         # CircleCI API v2 calls
@@ -32,6 +32,7 @@ scripts/
 │   │   └── console.ts          # log and error
 │   ├── ci.ts                   # Workspace package loading, token minting
 │   ├── npm.ts                  # npm registry helpers (whoami, exists, etc.)
+│   ├── npm-readiness.ts        # Typed probe: is an exact version available on the public registry?
 │   ├── seed-oidc.ts            # Shared OIDC trusted-publishing instructions
 │   ├── changesets.ts           # Changeset parsing, PR body building
 │   ├── announce.ts             # GitHub Release + Slack notification

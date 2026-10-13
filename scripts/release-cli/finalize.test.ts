@@ -88,6 +88,44 @@ describe('finalize.ts', () => {
     expect(secondVerifyArgs?.[1]).toBe('0.4.0')
   })
 
+  test('does not publish the wrapper or announce when platform packages never become available', async () => {
+    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    setupFinalizePath()
+
+    const verifySpy = spyOn(io.shell, 'verifyPackages').mockImplementation(() => shellPromise('', 1))
+    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
+    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue('')
+    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
+
+    const code = await finalize()
+
+    expect(code).toBe(1)
+    expect(verifySpy).toHaveBeenCalledTimes(1)
+    expect(publishSpy).not.toHaveBeenCalled()
+    expect(releaseSpy).not.toHaveBeenCalled()
+    expect(slackSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not announce when the published wrapper never becomes available', async () => {
+    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    setupFinalizePath()
+
+    const verifySpy = spyOn(io.shell, 'verifyPackages')
+      .mockImplementationOnce(() => shellPromise('', 0))
+      .mockImplementationOnce(() => shellPromise('', 1))
+    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
+    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue('')
+    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
+
+    const code = await finalize()
+
+    expect(code).toBe(1)
+    expect(verifySpy).toHaveBeenCalledTimes(2)
+    expect(publishSpy).toHaveBeenCalledTimes(1)
+    expect(releaseSpy).not.toHaveBeenCalled()
+    expect(slackSpy).not.toHaveBeenCalled()
+  })
+
   test('mints GitHub token for release creation', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
