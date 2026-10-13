@@ -138,8 +138,9 @@ export async function probeVersion(pkg: string, version: string, options: ProbeO
   let received: Response | null = null
   let didTimeOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
-  // Racing against the timer bounds the body read too, even if the fetch
-  // implementation ignores the abort signal.
+  // Racing against the timer bounds how long the probe waits, even if the fetch
+  // implementation ignores the abort signal. Releasing a stalled body relies on
+  // the abort itself: Bun's fetch rejects a pending body read with AbortError.
   const timedOut = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
       didTimeOut = true
