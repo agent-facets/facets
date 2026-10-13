@@ -5,6 +5,59 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-10-12" description="agent-facets 0.36.0 writes lockfile 0.4 with MCP server inventory and stricter frozen installs" tags={["CLI", "Breaking", "Improvement", "Fix"]} rss={{
+  title: "agent-facets 0.36.0: lockfile 0.4 records MCP servers",
+  description: "Breaking: agent-facets@0.36.0 writes lockfile 0.4, which records every facet's MCP servers by name, fingerprint, and alias or omission. Earlier CLIs cannot read it. Upgrade every CLI that shares a project with facet self-update, run one plain facet install, and commit facets.lock. facet install --frozen-lockfile now checks server collisions, stale server overrides, and server alias or omission changes before downloading anything. Under a 0.2 or 0.3 lockfile, a frozen install refuses any server alias or omission until you migrate. The first facet remove that keeps facets under an older lockfile migrates it to 0.4 and may need the network or MCP approval. A lockfile whose recorded servers disagree with a facet's verified content now fails with RECONCILE_SERVER_IDENTITY or RECONCILE_SERVER_FINGERPRINT. Frozen installs and removals now detect a facet whose source moved between registry, Git, and local. MCP approval stays machine-local; a lockfile never grants it."
+}}>
+  ## Lockfile 0.4 records MCP servers
+
+  `agent-facets@0.36.0` is out. `facet install`, `add`, `update`, and
+  `remove` now write lockfile `0.4`. It records every facet's MCP servers
+  by name, fingerprint, and alias or omission, so `facets.lock` alone
+  shows which servers a project selects. See
+  [Server inventory](/specification/lockfile#server-inventory).
+
+  **Breaking:** CLIs older than `0.36.0` cannot read a `0.4` lockfile.
+  [Migrate](/cli/install#migrating-the-lockfile) once per project:
+
+  ```sh
+  facet self-update   # on every machine and CI runner that shares the project
+  facet install       # writes lockfile 0.4
+  ```
+
+  Then commit `facets.lock`. MCP approval and `--accept-mcp` are
+  unchanged and stay machine-local. A lockfile never grants approval.
+
+  ## Stricter frozen installs
+
+  - **Server checks run first.** With a `0.4` lockfile,
+    [`facet install --frozen-lockfile`](/cli/install#frozen-lockfile)
+    fails before downloading anything on a server collision, a stale
+    `servers` override, or an alias or omission that differs from the
+    lockfile.
+  - **Older lockfiles ask you to migrate.** Under `0.2` or `0.3`, a
+    frozen install refuses any server alias or omission. Lockfiles
+    without server overrides still reproduce unchanged.
+  - **Tampered inventories fail.** Recorded servers that disagree with a
+    facet's verified content fail with `RECONCILE_SERVER_IDENTITY` or
+    `RECONCILE_SERVER_FINGERPRINT`. Restore `facets.lock` from a trusted
+    revision. See [Troubleshooting](/guides/troubleshooting).
+
+  ## Removing facets under an older lockfile
+
+  The first [`facet remove`](/cli/remove#older-lockfiles) that keeps
+  facets under a `0.2` or `0.3` lockfile verifies them to write `0.4`.
+  That one run may need the network or MCP approval. If it fails,
+  nothing changes and the error shows the cause.
+
+  ## Fixes
+
+  - Frozen installs and removals now catch a facet whose source moved
+    between the registry, Git, and a local path. Previously, switching a
+    registry facet to a Git fork or local path could pass the frozen
+    check.
+</Update>
+
 <Update label="2026-10-08" description="Browser sign-in for facet login and confirmed browser sign-out for facet logout" tags={["CLI", "New Feature", "Improvement"]} rss={{
   title: "Browser sign-in for the facet CLI",
   description: "facet login now supports browser sign-in on macOS and Linux. Run facet login --browser to open the verification page, or facet login --no-browser to get a URL and code to finish on another device. Personal access tokens still work: run facet login --token in an interactive terminal, or set FACET_TOKEN in CI and other non-interactive environments, including Windows. Tokens take priority over browser sessions. Commands renew browser sessions automatically, and a rejected credential fails the command instead of switching identity. facet logout now confirms the registry revoked your browser session before removing it locally; use facet logout --local to clean up offline. This ships in the next agent-facets release."
