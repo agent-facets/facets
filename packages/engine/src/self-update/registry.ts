@@ -1,6 +1,7 @@
 import { bunMethod } from './methods/bun.ts'
 import { curlMethod } from './methods/curl.ts'
 import { localDevMethod } from './methods/local-dev.ts'
+import { miseMethod } from './methods/mise.ts'
 import { npmMethod } from './methods/npm.ts'
 import { pnpmMethod } from './methods/pnpm.ts'
 import type { InstallMethod, MethodKind } from './methods/types.ts'
@@ -19,6 +20,7 @@ export const installMethods: Record<MethodKind, InstallMethod> = {
   yarn: yarnMethod,
   pnpm: pnpmMethod,
   bun: bunMethod,
+  mise: miseMethod,
   'local-dev': localDevMethod,
   unknown: unknownMethod,
 }
