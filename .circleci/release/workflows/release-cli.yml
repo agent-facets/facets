@@ -72,3 +72,18 @@ jobs:
         branches:
           ignore:
             - /.*/
+  - upload-cli-assets:
+      context:
+        - bot-context
+        - slack-secrets
+        - github
+      requires:
+        - finalize-cli
+        - package-cli-assets
+      filters:
+        tags:
+          only:
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/
