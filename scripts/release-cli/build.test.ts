@@ -252,7 +252,9 @@ try {
 `
 
 describe('standalone production native policy', () => {
-  test.skipIf(process.platform !== 'darwin')(
+  // This fixture cross-compiles both Darwin architectures, so it needs the
+  // optional prebuilds for the non-host architecture as well.
+  test.skipIf(process.platform !== 'darwin' || !requireNativeGraph)(
     'compiles isolated arm64/x64-baseline and retains ACL policy through forced GC in source and the host binary',
     async () => {
       await fixture(async (root) => {
