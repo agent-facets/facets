@@ -5,6 +5,22 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-10-18" description="agent-facets 0.36.1 publishes CLI archives and checksums to GitHub Releases" tags={["CLI", "Improvement"]}>
+  ## CLI downloads on GitHub Releases
+
+  `agent-facets@0.36.1` is out. Each CLI release now attaches prebuilt
+  `facet` archives to its GitHub Release, along with a `checksums.txt`
+  file for verifying downloads.
+
+  - **Every platform.** Archives cover macOS, Linux (glibc and musl),
+    and Windows on arm64 and x64.
+  - **More ways to install.** Download a versioned binary directly, or
+    use a tool that installs from GitHub Releases.
+
+  The install script and npm package still work as before. See the
+  [Quickstart](/quickstart).
+</Update>
+
 <Update label="2026-10-12" description="agent-facets 0.36.0 writes lockfile 0.4 with MCP server inventory and stricter frozen installs" tags={["CLI", "Breaking", "Improvement", "Fix"]} rss={{
   title: "agent-facets 0.36.0: lockfile 0.4 records MCP servers",
   description: "Breaking: agent-facets@0.36.0 writes lockfile 0.4, which records every facet's MCP servers by name, fingerprint, and alias or omission. Earlier CLIs cannot read it. Upgrade every CLI that shares a project with facet self-update, run one plain facet install, and commit facets.lock. facet install --frozen-lockfile now checks server collisions, stale server overrides, and server alias or omission changes before downloading anything. Under a 0.2 or 0.3 lockfile, a frozen install refuses any server alias or omission until you migrate. The first facet remove that keeps facets under an older lockfile migrates it to 0.4 and may need the network or MCP approval. A lockfile whose recorded servers disagree with a facet's verified content now fails with RECONCILE_SERVER_IDENTITY or RECONCILE_SERVER_FINGERPRINT. Frozen installs and removals now detect a facet whose source moved between registry, Git, and local. MCP approval stays machine-local; a lockfile never grants it."
