@@ -259,3 +259,4 @@ workflows:
           requires:
             - finalize-cli
             - package-cli-assets
+          serial-group: << pipeline.project.slug >>/release-cli-assets

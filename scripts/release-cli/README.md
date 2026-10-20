@@ -32,7 +32,17 @@ Tag push: agent-facets@X.Y.Z
 │     agent-facets wrapper with optionalDependencies →          │
 │     all 12 platform packages                                  │
 │  3. verify.ts — wait until the wrapper is available           │
-│  4. Create GitHub Release + Slack notification                │
+│  4. Leave GitHub delivery to upload-assets.ts                  │
+└───────────────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────────────────────┐
+│  upload-assets.ts                                              │
+│                                                               │
+│  1. Create or reuse a draft GitHub Release                    │
+│  2. Upload archives + checksums                                │
+│  3. Verify names, sizes, and SHA-256 digests remotely          │
+│  4. Publish the verified draft + notify Slack                  │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,10 +53,10 @@ Tag push: agent-facets@X.Y.Z
 | `build.test.ts`           | (local tests)               | Verify actual build options, native preflight and isolated policy |
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
 | `package-assets.ts`       | `package-cli-assets`        | Package existing binaries into archives and checksums       |
-| `upload-assets.ts`        | `upload-cli-assets`         | Upload packaged archives to the GitHub Release              |
+| `upload-assets.ts`        | `upload-cli-assets`         | Deliver, verify, and publish packaged archives              |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
-| `finalize.ts`             | `finalize-cli`              | Orchestrate: wait for platforms → publish wrapper → wait for wrapper → announce |
+| `finalize.ts`             | `finalize-cli`              | Orchestrate npm: wait for platforms → publish wrapper → wait for wrapper |
 | `verify.ts`               | (called by finalize)        | Wait until a given list of packages is available on npm     |
 | `seed.ts`                 | (manual, `bun seed:cli`)    | Seed platform package names on npm with v0.0.1 placeholders |
 | `targets.ts`              | (imported)                  | Platform target matrix and pure helper functions            |
@@ -67,14 +77,25 @@ windows-arm64, windows-x64, windows-x64-baseline
 After `build-cli`, `package-cli-assets` runs alongside npm publishing:
 
 ```text
-build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper + release) ─┐
-           └─ package-cli-assets (archives + checksums) ──────────────────────┴─ upload-cli-assets
+build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper) ────────────┐
+            └─ package-cli-assets (archives + checksums) ──────────────────────┴─ upload-cli-assets (draft → verify → publish)
 ```
 
 Neither npm publishing nor finalization requires the packaging job. Packaging
 failures are reported by CircleCI and Slack but do not block npm deployment.
-`upload-cli-assets` waits for both branches of the workflow, then uploads the
-packaged archives to the GitHub Release with `gh release upload --clobber`.
+`upload-cli-assets` waits for both branches of the workflow. It creates (or
+reuses) a **draft** GitHub Release, validates local archive bytes against
+`checksums.txt`, uploads the complete asset set, and validates every remote
+asset's name, size, and GitHub SHA-256 digest before publishing the draft and
+notifying Slack. GitHub makes a published release immutable, so publishing
+before this verification would make a failed upload unrecoverable.
+
+If upload or remote verification fails, the draft remains for a safe retry.
+A complete matching published release is an idempotent success. A published
+release with missing or mismatched assets is intentionally not mutable: publish
+a new version rather than retrying with `--clobber`. This is why
+`agent-facets@0.36.1`, which was published before asset delivery existed, cannot
+be backfilled.
 
 `package-assets.ts` writes `packages/cli/dist/release-assets` and the packaging
 job persists that directory only after success. Packaging requires `tar` and `zip` on
@@ -116,8 +137,8 @@ Users install via `npm install agent-facets`. npm resolves the correct platform 
 2. Publishing 12 platform packages first (each in its own CI job to avoid OOM)
 3. Publishing the wrapper package last (it references all 12 via optionalDependencies)
 4. Waiting for availability twice: before publishing the wrapper, for the 12 platforms
-   (so the wrapper's `optionalDependencies` resolve when users install), and after,
-   for the wrapper itself before announcing (see below)
+    (so the wrapper's `optionalDependencies` resolve when users install), and after,
+   for the wrapper itself before publishing the GitHub Release (see below)
 
 None of this fits `changeset publish`'s model, so the CLI has its own pipeline.
 
@@ -158,9 +179,9 @@ Each stage polls under one contract:
 - Long waits log a heartbeat every minute so CI's no-output timeout never fires.
 
 The two stages can wait up to 40 minutes combined. If a wait times out, `finalize.ts`
-exits nonzero before anything further is published or announced: a platform timeout
-means the wrapper is never published; a wrapper timeout means the release is never
-announced. **Do not republish** — npm already accepted the version, even if it is not
+exits nonzero before anything further is published: a platform timeout means the
+wrapper is never published; a wrapper timeout means the GitHub Release is never
+published. **Do not republish** — npm already accepted the version, even if it is not
 serving it yet. Check the package's npm page and any npm notification for a hold or
 block, then rerun `finalize-cli` once the versions are available; the wrapper publish
 skips a version that already exists.

@@ -19,6 +19,13 @@ export const githubIo = {
   },
   releaseCreate: (tag: string, title: string, notes: string) =>
     $`gh release create ${tag} --title ${title} --notes ${notes}`.text(),
+  /** Creates an unpublished Release. GitHub permits asset changes only while it remains a draft. */
+  releaseCreateDraft: (tag: string, title: string, notes: string) =>
+    $`gh release create ${tag} --draft --verify-tag --title ${title} --notes ${notes}`.text(),
+  /** Reads release state and assets. A missing release has a nonzero exit code. */
+  releaseView: (tag: string) => $`gh release view ${tag} --json tagName,isDraft,isImmutable,url,assets`.nothrow(),
   /** Uploads assets to a GitHub Release, replacing any existing asset with the same name. */
   releaseUpload: (tag: string, assets: string[]) => $`gh release upload ${tag} ${assets} --clobber`,
+  /** Publishes an existing draft Release after its assets have been verified. */
+  releasePublish: (tag: string) => $`gh release edit ${tag} --draft=false`.text(),
 }

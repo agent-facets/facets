@@ -73,6 +73,7 @@ jobs:
           ignore:
             - /.*/
   - upload-cli-assets:
+      serial-group: << pipeline.project.slug >>/release-cli-assets
       context:
         - bot-context
         - slack-secrets

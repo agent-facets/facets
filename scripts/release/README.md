@@ -2,6 +2,10 @@
 
 Publishes `@agent-facets/protocol`, `@agent-facets/brand`, `@agent-facets/adapter`, `@agent-facets/adapter-*`, and any future public library/adapter packages to npm. (`@agent-facets/engine` is private to the monorepo and never published.)
 
+This pipeline's GitHub Release creation remains independent of the CLI binary
+pipeline. CLI releases are published only after their draft release archives
+have been uploaded and digest-verified; see `../release-cli/README.md`.
+
 ## Flow
 
 ```

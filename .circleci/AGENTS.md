@@ -129,10 +129,11 @@ The main-branch / release top-level jobs that must queue are assigned a `serial-
 | `release`     | `release`       | `<< pipeline.project.slug >>/release/<< pipeline.parameters.package >>` |
 | `release-cli` | `build-cli`     | `<< pipeline.project.slug >>/release-cli-build`                         |
 | `release-cli` | `finalize-cli`  | `<< pipeline.project.slug >>/release-cli-finalize`                      |
+| `release-cli` | `upload-cli-assets` | `<< pipeline.project.slug >>/release-cli-assets`                    |
 
 Notes:
 
 - The `release` group keys on the `package` pipeline parameter so different packages (`protocol`, `adapter`, …) can release in parallel while repeat releases of the same package serialize. `scripts/release/tag.ts` parses the package name out of the tag and forwards it via the CircleCI API v2 trigger. The parameter is declared in `development/@config.yml` (which `release/@config.yml` symlinks to) with a default of `""`, for the `release-cli` trigger path that doesn't set it. Required because the serial-group charset (`[A-Za-z0-9._\-/]`) excludes `@`, so we can't embed the raw tag string.
-- `release-cli` uses **two distinct** group names (`release-cli-build` and `release-cli-finalize`). CircleCI's docs explicitly warn against reusing  the same `serial-group` value on multiple jobs in a single workflow.
+- `release-cli` uses **three distinct** group names (`release-cli-build`, `release-cli-finalize`, and `release-cli-assets`). CircleCI's docs explicitly warn against reusing the same `serial-group` value on multiple jobs in a single workflow. The asset-delivery queue prevents concurrent retries from racing a draft Release.
 - `publish-platform` intentionally has no `serial-group`. Each matrix variant publishes a distinct platform package, so parallel runs are safe, and adding it would spawn 12 separate queues.
 - Pipeline-number priority: if a newer pipeline enters a serial group while an older one is still waiting, the older one is skipped. This matches the behavior we want for deploys and releases — newer always wins.

@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 test('npm deployment has no direct or transitive dependency on archive packaging', async () => {
   const source = await Bun.file(new URL('../../.circleci/release/workflows/release-cli.yml', import.meta.url)).text()
   const workflow = Bun.YAML.parse(source) as {
-    jobs: Record<string, { requires?: string[] }>[]
+    jobs: Record<string, { requires?: string[]; 'serial-group'?: string }>[]
   }
   const jobs = new Map(workflow.jobs.flatMap(Object.entries))
   function dependencies(name: string, seen = new Set<string>()): Set<string> {
@@ -26,4 +26,5 @@ test('npm deployment has no direct or transitive dependency on archive packaging
     'build-cli',
     'package-cli-assets',
   ])
+  expect(jobs.get('upload-cli-assets')?.['serial-group']).toBe('<< pipeline.project.slug >>/release-cli-assets')
 })
