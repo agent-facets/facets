@@ -34,6 +34,8 @@ test('workflow dispatch uses the REST endpoint and passes the immutable tag as b
       'ref=agent-facets@0.4.0',
       '-f',
       'inputs[tag]=agent-facets@0.4.0',
+      '-F',
+      'return_run_details=true',
       '',
     ].join('\n'),
   )

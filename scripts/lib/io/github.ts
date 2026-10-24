@@ -51,6 +51,8 @@ export const githubIo = {
       `ref=${ref}`,
       '-f',
       `inputs[tag]=${tag}`,
+      '-F',
+      'return_run_details=true',
     ]),
   workflowWatch: (runId: string) => $`gh run watch ${runId} --repo ${GITHUB_REPO} --exit-status`.nothrow(),
 }
