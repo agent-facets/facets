@@ -16,9 +16,9 @@ scripts/
 │   ├── build.ts                # Cross-compile 12 platform binaries
 │   ├── publish-platform.ts     # Publish one platform binary package
 │   ├── publish-cli-package.ts  # Synthesize + publish CLI wrapper
-│   ├── finalize.ts             # Orchestrate wait → publish → wait → announce
+│   ├── finalize.ts             # Orchestrate npm readiness and wrapper publication
 │   ├── package-assets.ts        # Create portable GitHub Release archives + checksums
-│   ├── upload-assets.ts         # Validate and upload archives after finalization
+│   ├── upload-assets.ts         # Draft, upload, verify, and publish CLI release archives
 │   ├── verify.ts               # Wait for CLI packages to be available on npm (20m deadline)
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions

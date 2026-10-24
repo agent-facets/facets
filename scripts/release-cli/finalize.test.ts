@@ -1,205 +1,77 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import * as announce from '../lib/announce'
-import * as ci from '../lib/ci'
-import { CLI_PACKAGE_NAME, SLACK_CHANNELS } from '../lib/constants'
+import { CLI_PACKAGE_NAME } from '../lib/constants'
 import { io } from '../lib/io'
-import { SAMPLE_CHANGELOG, shellPromise, shellResult, silenceIO } from '../lib/test-helpers'
+import { shellPromise, shellResult, silenceIO } from '../lib/test-helpers'
 import { finalize } from './finalize'
 import { platformPackageNames } from './targets'
 
 describe('finalize.ts', () => {
-  beforeEach(() => {
-    silenceIO()
-  })
-
+  beforeEach(silenceIO)
   afterEach(() => {
     mock.restore()
     delete process.env.CIRCLE_TAG
-    delete process.env.GH_TOKEN
-    delete process.env.GITHUB_TOKEN
   })
 
   function setupFinalizePath() {
-    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
     spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
     spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
-    spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-      { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
-    ])
-    spyOn(io.shell, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
-    spyOn(io.gh, 'releaseCreate').mockResolvedValue(
-      'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
-    )
-    spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
   }
 
   test('returns 1 when CIRCLE_TAG is not set', async () => {
-    delete process.env.CIRCLE_TAG
-    const code = await finalize()
-    expect(code).toBe(1)
+    expect(await finalize()).toBe(1)
   })
 
   test('returns 1 for unparseable tag', async () => {
     process.env.CIRCLE_TAG = 'not-a-tag'
-    const code = await finalize()
-    expect(code).toBe(1)
+    expect(await finalize()).toBe(1)
   })
 
-  test('runs the full verify → publish → verify pipeline', async () => {
+  test('verifies platforms, publishes CLI, then verifies the wrapper', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
-
-    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
-    const verifySpy = spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
-
-    const code = await finalize()
-
-    expect(code).toBe(0)
-    expect(publishSpy).toHaveBeenCalledTimes(1)
-    expect(verifySpy).toHaveBeenCalledTimes(2)
-  })
-
-  test('verifies platforms, publishes CLI, then verifies CLI wrapper', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-
-    const callOrder: Array<{ phase: string; args?: unknown[] }> = []
-    spyOn(io.shell, 'verifyPackages').mockImplementation((packages: string[], version: string) => {
-      callOrder.push({ phase: 'verify', args: [packages, version] })
+    const calls: string[] = []
+    spyOn(io.shell, 'verifyPackages').mockImplementation(() => {
+      calls.push('verify')
       return shellPromise()
     })
     spyOn(io.shell, 'publishCliPackage').mockImplementation(() => {
-      callOrder.push({ phase: 'publish' })
+      calls.push('publish')
       return shellPromise()
     })
 
-    await finalize()
-
-    expect(callOrder.map((c) => c.phase)).toEqual(['verify', 'publish', 'verify'])
-
-    // First verify call: the 12 platform packages
-    const firstVerifyArgs = callOrder[0]?.args
-    expect(firstVerifyArgs?.[0]).toEqual(platformPackageNames())
-    expect(firstVerifyArgs?.[1]).toBe('0.4.0')
-
-    // Second verify call: just the CLI wrapper
-    const secondVerifyArgs = callOrder[2]?.args
-    expect(secondVerifyArgs?.[0]).toEqual([CLI_PACKAGE_NAME])
-    expect(secondVerifyArgs?.[1]).toBe('0.4.0')
+    expect(await finalize()).toBe(0)
+    expect(calls).toEqual(['verify', 'publish', 'verify'])
   })
 
-  test('does not publish the wrapper or announce when platform packages never become available', async () => {
+  test('passes the platform packages and wrapper version to readiness checks', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
-
-    const verifySpy = spyOn(io.shell, 'verifyPackages').mockImplementation(() => shellPromise('', 1))
-    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
-    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue('')
-    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
-
-    const code = await finalize()
-
-    expect(code).toBe(1)
-    expect(verifySpy).toHaveBeenCalledTimes(1)
-    expect(publishSpy).not.toHaveBeenCalled()
-    expect(releaseSpy).not.toHaveBeenCalled()
-    expect(slackSpy).not.toHaveBeenCalled()
-  })
-
-  test('does not announce when the published wrapper never becomes available', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-
-    const verifySpy = spyOn(io.shell, 'verifyPackages')
-      .mockImplementationOnce(() => shellPromise('', 0))
-      .mockImplementationOnce(() => shellPromise('', 1))
-    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
-    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue('')
-    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
-
-    const code = await finalize()
-
-    expect(code).toBe(1)
-    expect(verifySpy).toHaveBeenCalledTimes(2)
-    expect(publishSpy).toHaveBeenCalledTimes(1)
-    expect(releaseSpy).not.toHaveBeenCalled()
-    expect(slackSpy).not.toHaveBeenCalled()
-  })
-
-  test('mints GitHub token for release creation', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-
-    const ghSpy = spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('gh-token')
+    const verify = spyOn(io.shell, 'verifyPackages')
 
     await finalize()
 
-    expect(ghSpy).toHaveBeenCalledTimes(1)
-    expect(process.env.GH_TOKEN).toBe('gh-token')
-    expect(process.env.GITHUB_TOKEN).toBe('gh-token')
+    expect(verify).toHaveBeenNthCalledWith(1, platformPackageNames(), '0.4.0')
+    expect(verify).toHaveBeenNthCalledWith(2, [CLI_PACKAGE_NAME], '0.4.0')
   })
 
-  test('passes version and correct package list to both verify calls', async () => {
+  test('does not publish the wrapper when platforms are unavailable', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
+    spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult('', 1))
+    const publish = spyOn(io.shell, 'publishCliPackage')
 
-    const verifySpy = spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
-
-    await finalize()
-
-    expect(verifySpy).toHaveBeenCalledTimes(2)
-    expect(verifySpy).toHaveBeenNthCalledWith(1, platformPackageNames(), '0.4.0')
-    expect(verifySpy).toHaveBeenNthCalledWith(2, [CLI_PACKAGE_NAME], '0.4.0')
+    expect(await finalize()).toBe(1)
+    expect(publish).not.toHaveBeenCalled()
   })
 
-  test('creates GitHub Release after verify', async () => {
+  test('does not publish a GitHub Release or notify Slack', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
+    const create = spyOn(io.gh, 'releaseCreate')
+    const draft = spyOn(io.gh, 'releaseCreateDraft')
 
-    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue(
-      'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
-    )
-
-    const code = await finalize()
-
-    expect(code).toBe(0)
-    expect(releaseSpy).toHaveBeenCalledTimes(1)
-    const [tag, title] = releaseSpy.mock.calls[0] ?? []
-    expect(tag).toBe('agent-facets@0.4.0')
-    expect(title).toBe('agent-facets@0.4.0')
-  })
-
-  test('sends notification after release', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-
-    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
-
-    const code = await finalize()
-
-    expect(code).toBe(0)
-    expect(slackSpy).toHaveBeenCalledTimes(1)
-    const [channel] = slackSpy.mock.calls[0] ?? []
-    expect(channel).toBe(SLACK_CHANNELS.auto_cli_deploys)
-  })
-
-  test('continues even if GitHub Release creation fails', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-    spyOn(io.shell, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
-
-    const code = await finalize()
-
-    expect(code).toBe(0)
-  })
-
-  test('continues even if notification fails', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    setupFinalizePath()
-    spyOn(announce, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
-
-    const code = await finalize()
-
-    expect(code).toBe(0)
+    expect(await finalize()).toBe(0)
+    expect(create).not.toHaveBeenCalled()
+    expect(draft).not.toHaveBeenCalled()
   })
 })

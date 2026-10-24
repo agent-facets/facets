@@ -1,29 +1,25 @@
 #!/usr/bin/env bun
 
 /**
- * Finalize a CLI release — wait for platforms, publish cli package, wait, announce.
+ * Finalize a CLI release — wait for platforms, publish cli package, and wait.
  *
  * Runs after npm has accepted all 12 platform packages from the matrix
  * publish jobs. Acceptance is not availability: npm scans each version before
  * serving it. This script:
  *
- * 1. Mints a GitHub App token (for GitHub Release creation)
- * 2. Waits until all 12 platform packages are available on npm
- * 3. Publishes the cli package (agent-facets) directly to latest
- * 4. Waits until the cli package is available on npm
- * 5. Creates a GitHub Release and sends a notification
+ * 1. Waits until all 12 platform packages are available on npm
+ * 2. Publishes the cli package (agent-facets) directly to latest
+ * 3. Waits until the cli package is available on npm
  *
  * Safety: the cli package is always the last package published, and only
  * once every platform package it depends on is available. If a wait times
- * out, the script exits nonzero before publishing or announcing anything
+ * out, the script exits nonzero before publishing anything further.
  * further. Rerunning the job is safe: the wrapper publish skips a version
  * that already exists.
  *
  * Invoked by the `finalize-cli` job in the release-cli CircleCI workflow.
  */
 
-import { announceRelease } from '../lib/announce'
-import { loadWorkspacePackages, mintGithubTokens } from '../lib/ci'
 import { CLI_PACKAGE_NAME } from '../lib/constants'
 import { io } from '../lib/io'
 import { parseTag } from '../lib/tags'
@@ -44,9 +40,6 @@ export async function finalize(): Promise<number> {
 
   io.console.log(`Finalizing release for ${parsed.name}@${parsed.version}`)
 
-  // Mint GitHub token (for Release creation; npm OIDC is handled by the publish script)
-  await mintGithubTokens()
-
   // Wait for the 12 platform packages to be available on npm before publishing the CLI wrapper.
   // The CLI package's optionalDependencies must be resolvable when users install it.
   io.console.log('Waiting for platform packages to become available on npm...')
@@ -54,7 +47,7 @@ export async function finalize(): Promise<number> {
   if (platforms.exitCode !== 0) {
     io.console.error(
       `Platform packages for ${parsed.version} are not all available on npm. ` +
-        `${CLI_PACKAGE_NAME} was NOT published and the release was not announced.\n` +
+        `${CLI_PACKAGE_NAME} was NOT published.\n` +
         'Do not republish the platform packages. Once npm makes them available, rerun this job.',
     )
     return 1
@@ -66,28 +59,21 @@ export async function finalize(): Promise<number> {
   io.console.log('Publishing CLI package...')
   await io.shell.publishCliPackage()
 
-  // Wait for the CLI wrapper itself to be available on npm before announcing.
+  // Wait for the CLI wrapper itself to be available before asset delivery publishes the release.
   io.console.log('Waiting for CLI package to become available on npm...')
   const wrapper = await io.shell.verifyPackages([CLI_PACKAGE_NAME], parsed.version)
   if (wrapper.exitCode !== 0) {
     io.console.error(
       `${CLI_PACKAGE_NAME}@${parsed.version} was published but is not available on npm yet; ` +
-        'the release was not announced.\n' +
-        'Do not republish. Once npm makes it available, rerun this job: it skips the existing publish and announces.',
+        'the GitHub Release was not published.\n' +
+        'Do not republish. Once npm makes it available, rerun this job: it skips the existing publish.',
     )
     return 1
   }
 
   io.console.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
 
-  // Announce
-  const packages = await loadWorkspacePackages()
-  const pkg = packages.find((p) => p.name === parsed.name)
-  if (pkg) {
-    await announceRelease(tag, pkg.dir, parsed.version)
-  }
-
-  io.console.log('Done.')
+  io.console.log('Npm finalization complete. Asset delivery will publish and announce the GitHub Release.')
   return 0
 }
 

@@ -1,134 +1,191 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { io } from '../lib/io'
-import { shellResult, silenceIO } from '../lib/test-helpers'
-import { expectedReleaseAssetNames, renderUploadCliAssetsResult, uploadCliAssets } from './upload-assets'
+import { shellPromise, shellResult, silenceIO } from '../lib/test-helpers'
+import { expectedReleaseAssetNames, uploadCliAssets } from './upload-assets'
 
 let assetsDir: string
-let originalEnv: Pick<NodeJS.ProcessEnv, 'CIRCLE_TAG' | 'GH_TOKEN' | 'GITHUB_TOKEN'>
+
+function digest(value: string) {
+  return createHash('sha256').update(value).digest('hex')
+}
 
 async function writeAssets(names = expectedReleaseAssetNames()) {
   await mkdir(assetsDir, { recursive: true })
-  for (const name of names) await Bun.write(resolve(assetsDir, name), name)
+  const archives = names.filter((name) => name !== 'checksums.txt')
+  for (const name of archives) await Bun.write(resolve(assetsDir, name), name)
+  if (names.includes('checksums.txt')) {
+    await Bun.write(
+      `${assetsDir}/checksums.txt`,
+      `${archives
+        .map((name) => `${digest(name)}  ${name}`)
+        .sort()
+        .join('\n')}\n`,
+    )
+  }
+}
+
+function release(assets: Array<{ name: string; size: number; digest?: string }> = [], isDraft = true) {
+  return shellResult(
+    JSON.stringify({
+      tagName: 'agent-facets@0.4.0',
+      isDraft,
+      isImmutable: !isDraft,
+      url: 'https://example.test/release',
+      assets,
+    }),
+  )
+}
+
+function expectedRemoteAssets() {
+  return expectedReleaseAssetNames().map((name) => ({
+    name,
+    size:
+      name === 'checksums.txt'
+        ? expectedReleaseAssetNames()
+            .filter((asset) => asset !== 'checksums.txt')
+            .map((asset) => `${digest(asset)}  ${asset}`)
+            .sort()
+            .join('\n').length + 1
+        : name.length,
+    digest: `sha256:${
+      name === 'checksums.txt'
+        ? digest(
+            `${expectedReleaseAssetNames()
+              .filter((asset) => asset !== 'checksums.txt')
+              .map((asset) => `${digest(asset)}  ${asset}`)
+              .sort()
+              .join('\n')}\n`,
+          )
+        : digest(name)
+    }`,
+  }))
 }
 
 describe('upload-assets.ts', () => {
-  beforeEach(() => {
-    silenceIO()
-    originalEnv = {
-      CIRCLE_TAG: process.env.CIRCLE_TAG,
-      GH_TOKEN: process.env.GH_TOKEN,
-      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-    }
-  })
-
-  afterEach(async () => {
-    mock.restore()
-    process.env.CIRCLE_TAG = originalEnv.CIRCLE_TAG
-    process.env.GH_TOKEN = originalEnv.GH_TOKEN
-    process.env.GITHUB_TOKEN = originalEnv.GITHUB_TOKEN
-    if (originalEnv.CIRCLE_TAG === undefined) delete process.env.CIRCLE_TAG
-    if (originalEnv.GH_TOKEN === undefined) delete process.env.GH_TOKEN
-    if (originalEnv.GITHUB_TOKEN === undefined) delete process.env.GITHUB_TOKEN
-    if (assetsDir !== undefined) await rm(assetsDir, { recursive: true, force: true })
-  })
-
   beforeEach(async () => {
     assetsDir = await mkdtemp(resolve(tmpdir(), 'facet-release-assets-'))
-  })
-
-  test('expected assets include all archives and checksums', () => {
-    expect(expectedReleaseAssetNames()).toEqual([
-      'checksums.txt',
-      'facet-darwin-arm64.tar.gz',
-      'facet-darwin-x64.tar.gz',
-      'facet-linux-arm64-musl.tar.gz',
-      'facet-linux-arm64.tar.gz',
-      'facet-linux-x64-musl.tar.gz',
-      'facet-linux-x64.tar.gz',
-      'facet-windows-arm64.zip',
-      'facet-windows-x64.zip',
-    ])
-  })
-
-  test('uploads all expected assets with --clobber through the GitHub I/O layer', async () => {
+    silenceIO()
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('token')
+    spyOn(io.shell, 'readFile').mockResolvedValue('## 0.4.0\n\n- Test release')
+  })
+  afterEach(async () => {
+    mock.restore()
+    await rm(assetsDir, { recursive: true, force: true })
+    delete process.env.CIRCLE_TAG
+    delete process.env.GH_TOKEN
+    delete process.env.GITHUB_TOKEN
+  })
+
+  test('rejects missing local assets before GitHub authentication', async () => {
+    const auth = spyOn(io.shell, 'mintGitHubAppToken')
+    expect(await uploadCliAssets({ assetsDir })).toMatchObject({ ok: false, code: 'missing-assets' })
+    expect(auth).not.toHaveBeenCalled()
+  })
+
+  test('rejects a local archive whose checksum does not match', async () => {
     await writeAssets()
-    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-token')
-    const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
-
-    const result = await uploadCliAssets({ assetsDir })
-
-    expect(result).toEqual({ ok: true, tag: 'agent-facets@0.4.0', count: expectedReleaseAssetNames().length })
-    expect(renderUploadCliAssetsResult(result)).toBe(0)
-    expect(process.env.GH_TOKEN).toBe('fake-token')
-    expect(process.env.GITHUB_TOKEN).toBe('fake-token')
-    expect(uploadSpy).toHaveBeenCalledTimes(1)
-    const [tag, paths] = uploadSpy.mock.calls[0] ?? []
-    expect(tag).toBe('agent-facets@0.4.0')
-    expect(paths).toEqual(expectedReleaseAssetNames().map((name) => resolve(assetsDir, name)))
+    const firstAsset = expectedReleaseAssetNames()[0]
+    if (!firstAsset) expect.unreachable()
+    await Bun.write(resolve(assetsDir, firstAsset), 'tampered')
+    expect(await uploadCliAssets({ assetsDir })).toEqual({ ok: false, code: 'invalid-checksums' })
   })
 
-  test('fails when the assets directory is missing', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
-
-    await rm(assetsDir, { recursive: true })
-    const result = await uploadCliAssets({ assetsDir })
-
-    expect(result).toEqual({ ok: false, code: 'missing-assets-dir', assetsDir })
-    expect(renderUploadCliAssetsResult(result)).toBe(1)
-    expect(uploadSpy).not.toHaveBeenCalled()
-  })
-
-  test('fails when any expected asset is missing', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
-    await writeAssets(expectedReleaseAssetNames().filter((name) => name !== 'checksums.txt'))
-    const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
-
-    const result = await uploadCliAssets({ assetsDir })
-
-    expect(result).toEqual({ ok: false, code: 'missing-assets', assetsDir, missing: ['checksums.txt'] })
-    expect(renderUploadCliAssetsResult(result)).toBe(1)
-    expect(uploadSpy).not.toHaveBeenCalled()
-  })
-
-  test('rejects non-CLI release tags', async () => {
-    process.env.CIRCLE_TAG = '@agent-facets/protocol@1.0.0'
+  test('creates a draft, uploads, verifies, publishes, then notifies', async () => {
     await writeAssets()
-    const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    const events: string[] = []
+    spyOn(io.gh, 'releaseView')
+      .mockResolvedValueOnce(shellResult('', 1))
+      .mockResolvedValueOnce(release())
+      .mockResolvedValueOnce(release(expectedRemoteAssets()))
+      .mockResolvedValueOnce(release(expectedRemoteAssets(), false))
+    spyOn(io.gh, 'releaseCreateDraft').mockImplementation(async () => {
+      events.push('draft')
+      return ''
+    })
+    spyOn(io.gh, 'releaseUpload').mockImplementation(() => {
+      events.push('upload')
+      return shellPromise()
+    })
+    spyOn(io.gh, 'releasePublish').mockImplementation(async () => {
+      events.push('publish')
+      return ''
+    })
 
-    const result = await uploadCliAssets({ assetsDir })
-
-    expect(result).toEqual({ ok: false, code: 'wrong-package', name: '@agent-facets/protocol' })
-    expect(renderUploadCliAssetsResult(result)).toBe(1)
-    expect(uploadSpy).not.toHaveBeenCalled()
+    expect(await uploadCliAssets({ assetsDir })).toEqual({
+      ok: true,
+      tag: 'agent-facets@0.4.0',
+      count: 9,
+      published: true,
+    })
+    expect(events).toEqual(['draft', 'upload', 'publish'])
   })
 
-  test('returns a structured failure when GitHub upload fails', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+  test('repairs a partial draft and never creates a second release', async () => {
     await writeAssets()
-    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-token')
-    spyOn(io.gh, 'releaseUpload').mockRejectedValue(new Error('upload failed'))
+    const draft = spyOn(io.gh, 'releaseCreateDraft')
+    spyOn(io.gh, 'releaseView')
+      .mockResolvedValueOnce(release())
+      .mockResolvedValueOnce(release(expectedRemoteAssets()))
+      .mockResolvedValueOnce(release(expectedRemoteAssets(), false))
+    spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    spyOn(io.gh, 'releasePublish').mockResolvedValue('')
 
-    const result = await uploadCliAssets({ assetsDir })
-
-    expect(result).toEqual({ ok: false, code: 'github-upload-failed' })
-    expect(renderUploadCliAssetsResult(result)).toBe(1)
+    expect((await uploadCliAssets({ assetsDir })).ok).toBe(true)
+    expect(draft).not.toHaveBeenCalled()
   })
 
-  test('returns a structured failure when GitHub authentication fails', async () => {
-    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+  test('leaves an immutable incomplete release untouched', async () => {
     await writeAssets()
-    spyOn(io.shell, 'mintGitHubAppToken').mockRejectedValue(new Error('authentication failed'))
-    const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    spyOn(io.gh, 'releaseView').mockResolvedValue(release([], false))
+    const upload = spyOn(io.gh, 'releaseUpload')
 
-    const result = await uploadCliAssets({ assetsDir })
+    expect(await uploadCliAssets({ assetsDir })).toEqual({
+      ok: false,
+      code: 'published-release-incomplete',
+      tag: 'agent-facets@0.4.0',
+    })
+    expect(upload).not.toHaveBeenCalled()
+  })
 
-    expect(result).toEqual({ ok: false, code: 'github-auth-failed' })
-    expect(renderUploadCliAssetsResult(result)).toBe(1)
-    expect(uploadSpy).not.toHaveBeenCalled()
+  test('accepts an already-published complete matching release without mutation', async () => {
+    await writeAssets()
+    spyOn(io.gh, 'releaseView').mockResolvedValue(release(expectedRemoteAssets(), false))
+    const upload = spyOn(io.gh, 'releaseUpload')
+
+    expect(await uploadCliAssets({ assetsDir })).toEqual({
+      ok: true,
+      tag: 'agent-facets@0.4.0',
+      count: 9,
+      published: false,
+    })
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  test('does not publish when uploaded bytes do not match the remote digest', async () => {
+    await writeAssets()
+    spyOn(io.gh, 'releaseView').mockResolvedValueOnce(release()).mockResolvedValueOnce(release([]))
+    spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    const publish = spyOn(io.gh, 'releasePublish')
+
+    expect(await uploadCliAssets({ assetsDir })).toEqual({
+      ok: false,
+      code: 'remote-assets-mismatch',
+      tag: 'agent-facets@0.4.0',
+    })
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  test('recognizes a complete release after a previously lost publication response', async () => {
+    await writeAssets()
+    spyOn(io.gh, 'releaseView').mockResolvedValue(release(expectedRemoteAssets(), false))
+    const publish = spyOn(io.gh, 'releasePublish')
+
+    expect(await uploadCliAssets({ assetsDir })).toMatchObject({ ok: true, published: false })
+    expect(publish).not.toHaveBeenCalled()
   })
 })
