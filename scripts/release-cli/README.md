@@ -93,6 +93,14 @@ then generates and verifies GitHub/Sigstore provenance attestations for every
 archive before publishing. GitHub makes a published release immutable, so
 publishing before either verification would make a failed delivery unrecoverable.
 
+The GitHub Actions workflow passes its scoped `GITHUB_TOKEN` as `GH_TOKEN` and
+selects `FACET_RELEASE_AUTH=workflow-token`; it never receives CircleCI's
+GitHub App credentials. The CircleCI dispatcher retains App-token minting only
+to dispatch and watch the exact workflow run ID returned by GitHub's dispatch
+API. If the App lacks workflow-dispatch permission, delivery fails before a
+release is published; grant that external permission only through the approved
+GitHub App administration process.
+
 If upload, remote-digest verification, or provenance verification fails, the
 draft remains for a safe retry.
 A complete matching published release is an idempotent success. A published

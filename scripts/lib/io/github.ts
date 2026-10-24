@@ -5,6 +5,19 @@
 import { $ } from 'bun'
 import { GITHUB_REPO } from '../constants'
 
+async function runGh(
+  executable: string,
+  args: string[],
+): Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }> {
+  const process = Bun.spawn({ cmd: [executable, ...args], stdout: 'pipe', stderr: 'pipe' })
+  const [exitCode, stdout, stderr] = await Promise.all([
+    process.exited,
+    new Response(process.stdout).arrayBuffer(),
+    new Response(process.stderr).arrayBuffer(),
+  ])
+  return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }
+}
+
 export const githubIo = {
   authSetupGit: () => $`gh auth setup-git`,
   prList: (head: string) => $`gh pr list --head ${head} --state open --json number --jq .[0].number`.text(),
@@ -28,9 +41,16 @@ export const githubIo = {
   releaseUpload: (tag: string, assets: string[]) => $`gh release upload ${tag} ${assets} --clobber`,
   /** Publishes an existing draft Release after its assets have been verified. */
   releasePublish: (tag: string) => $`gh release edit ${tag} --draft=false`.text(),
-  workflowDispatch: (workflow: string, ref: string, tag: string) =>
-    $`gh workflow run ${workflow} --repo ${GITHUB_REPO} --ref ${ref} -f tag=${tag}`.nothrow(),
-  workflowLatestDispatchRun: (workflow: string, tag: string) =>
-    $`gh run list ${workflow} --repo ${GITHUB_REPO} --branch ${tag} --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId'`.nothrow(),
+  workflowDispatch: (workflow: string, ref: string, tag: string, executable = 'gh') =>
+    runGh(executable, [
+      'api',
+      '--method',
+      'POST',
+      `repos/${GITHUB_REPO}/actions/workflows/${workflow}/dispatches`,
+      '-f',
+      `ref=${ref}`,
+      '-f',
+      `inputs[tag]=${tag}`,
+    ]),
   workflowWatch: (runId: string) => $`gh run watch ${runId} --repo ${GITHUB_REPO} --exit-status`.nothrow(),
 }

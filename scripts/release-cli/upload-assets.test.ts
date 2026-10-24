@@ -95,6 +95,29 @@ describe('upload-assets.ts', () => {
     expect(await uploadCliAssets({ assetsDir })).toEqual({ ok: false, code: 'invalid-checksums' })
   })
 
+  test('uses only the supplied workflow token in GitHub Actions mode', async () => {
+    await writeAssets()
+    process.env.GH_TOKEN = 'workflow-token'
+    const mint = spyOn(io.shell, 'mintGitHubAppToken')
+    spyOn(io.gh, 'releaseView').mockResolvedValue(release(expectedRemoteAssets(), false))
+
+    expect(await uploadCliAssets({ assetsDir, auth: 'workflow-token' })).toMatchObject({ ok: true, published: false })
+    expect(mint).not.toHaveBeenCalled()
+  })
+
+  test('rejects GitHub Actions mode without a workflow token before release mutation', async () => {
+    await writeAssets()
+    const mint = spyOn(io.shell, 'mintGitHubAppToken')
+    const view = spyOn(io.gh, 'releaseView')
+
+    expect(await uploadCliAssets({ assetsDir, auth: 'workflow-token' })).toEqual({
+      ok: false,
+      code: 'missing-workflow-token',
+    })
+    expect(mint).not.toHaveBeenCalled()
+    expect(view).not.toHaveBeenCalled()
+  })
+
   test('creates a draft, uploads, verifies, publishes, then notifies', async () => {
     await writeAssets()
     const events: string[] = []

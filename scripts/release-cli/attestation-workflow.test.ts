@@ -10,6 +10,7 @@ test('the archive workflow builds, attests, verifies, then publishes the exact t
   expect(source).toContain('attestations: write')
   expect(source).toContain('actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4')
   expect(source).toContain('subject-checksums: packages/cli/dist/release-assets/checksums.txt')
+  expect(source).toContain('FACET_RELEASE_AUTH: workflow-token')
   expect(source).toContain('--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-cli-assets.yml"')
   expect(source).toContain('--source-ref "refs/tags/$TAG"')
 

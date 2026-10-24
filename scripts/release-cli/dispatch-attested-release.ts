@@ -5,16 +5,24 @@ import { mintGithubTokens } from '../lib/ci'
 import { io } from '../lib/io'
 
 const WORKFLOW = 'release-cli-assets.yml'
-const MAX_LOOKUPS = 60
-const LOOKUP_DELAY_MS = 5_000
-
 export type DispatchAttestedReleaseResult =
   | { ok: true; tag: string; runId: string }
   | { ok: false; code: 'missing-tag' }
   | { ok: false; code: 'github-auth-failed' }
   | { ok: false; code: 'workflow-dispatch-failed'; tag: string }
-  | { ok: false; code: 'workflow-run-not-found'; tag: string }
+  | { ok: false; code: 'workflow-dispatch-response-invalid'; tag: string }
   | { ok: false; code: 'workflow-run-failed'; tag: string; runId: string }
+
+function parseDispatchedRunId(stdout: Buffer): string | undefined {
+  try {
+    const response = JSON.parse(stdout.toString()) as { workflow_run_id?: unknown }
+    return typeof response.workflow_run_id === 'number' && Number.isSafeInteger(response.workflow_run_id)
+      ? String(response.workflow_run_id)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export async function dispatchAttestedRelease(): Promise<DispatchAttestedReleaseResult> {
   const tag = process.env.CIRCLE_TAG
@@ -28,18 +36,11 @@ export async function dispatchAttestedRelease(): Promise<DispatchAttestedRelease
 
   const dispatch = await io.gh.workflowDispatch(WORKFLOW, tag, tag)
   if (dispatch.exitCode !== 0) return { ok: false, code: 'workflow-dispatch-failed', tag }
+  const runId = parseDispatchedRunId(dispatch.stdout)
+  if (!runId) return { ok: false, code: 'workflow-dispatch-response-invalid', tag }
 
-  for (let attempt = 0; attempt < MAX_LOOKUPS; attempt++) {
-    const listed = await io.gh.workflowLatestDispatchRun(WORKFLOW, tag)
-    const runId = listed.exitCode === 0 ? listed.stdout.toString().trim() : ''
-    if (runId && runId !== 'null') {
-      const watched = await io.gh.workflowWatch(runId)
-      return watched.exitCode === 0 ? { ok: true, tag, runId } : { ok: false, code: 'workflow-run-failed', tag, runId }
-    }
-    await Bun.sleep(LOOKUP_DELAY_MS)
-  }
-
-  return { ok: false, code: 'workflow-run-not-found', tag }
+  const watched = await io.gh.workflowWatch(runId)
+  return watched.exitCode === 0 ? { ok: true, tag, runId } : { ok: false, code: 'workflow-run-failed', tag, runId }
 }
 
 export function renderDispatchAttestedReleaseResult(result: DispatchAttestedReleaseResult): number {
@@ -60,8 +61,8 @@ export function renderDispatchAttestedReleaseResult(result: DispatchAttestedRele
         `Failed to dispatch ${WORKFLOW} for ${result.tag}. Confirm the GitHub App has the approved Actions workflow permission.`,
       )
       break
-    case 'workflow-run-not-found':
-      io.console.error(`GitHub Actions did not create a ${WORKFLOW} run for ${result.tag} before the timeout.`)
+    case 'workflow-dispatch-response-invalid':
+      io.console.error(`GitHub did not return a valid workflow run ID while dispatching ${WORKFLOW} for ${result.tag}.`)
       break
     case 'workflow-run-failed':
       io.console.error(`GitHub Actions run ${result.runId} failed while delivering attested assets for ${result.tag}.`)

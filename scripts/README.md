@@ -99,6 +99,9 @@ rebuilds the archives from the exact tag, checks their SHA-256 values, publishes
 GitHub/Sigstore provenance attestations, verifies those attestations, and only
 then publishes the draft GitHub Release. This keeps the provenance build inside
 the CI provider that supplies the OIDC identity used by GitHub attestations.
+GitHub Actions uses its scoped workflow token for release delivery; CircleCI
+uses its GitHub App token only for the dispatch and watches the run ID returned
+by GitHub, never the latest run for a tag.
 
 There are two independent release-pipeline workflows, both triggered by git tag
 patterns:

@@ -18,8 +18,7 @@ describe('dispatch-attested-release.ts', () => {
   })
 
   test('dispatches the tag and waits for the matching workflow run', async () => {
-    const dispatch = spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult())
-    spyOn(io.gh, 'workflowLatestDispatchRun').mockResolvedValue(shellResult('123\n'))
+    const dispatch = spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult('{"workflow_run_id":123}'))
     const watch = spyOn(io.gh, 'workflowWatch').mockResolvedValue(shellResult())
 
     expect(await dispatchAttestedRelease()).toEqual({ ok: true, tag: 'agent-facets@0.4.0', runId: '123' })
@@ -27,15 +26,27 @@ describe('dispatch-attested-release.ts', () => {
     expect(watch).toHaveBeenCalledWith('123')
   })
 
-  test('reports a dispatch permission failure without waiting for a run', async () => {
+  test('reports a dispatch permission failure without watching a run', async () => {
     spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult('', 1))
-    const listed = spyOn(io.gh, 'workflowLatestDispatchRun')
+    const watch = spyOn(io.gh, 'workflowWatch')
 
     expect(await dispatchAttestedRelease()).toEqual({
       ok: false,
       code: 'workflow-dispatch-failed',
       tag: 'agent-facets@0.4.0',
     })
-    expect(listed).not.toHaveBeenCalled()
+    expect(watch).not.toHaveBeenCalled()
+  })
+
+  test('fails closed when dispatch does not return its exact workflow run ID', async () => {
+    spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult('{}'))
+    const watch = spyOn(io.gh, 'workflowWatch')
+
+    expect(await dispatchAttestedRelease()).toEqual({
+      ok: false,
+      code: 'workflow-dispatch-response-invalid',
+      tag: 'agent-facets@0.4.0',
+    })
+    expect(watch).not.toHaveBeenCalled()
   })
 })

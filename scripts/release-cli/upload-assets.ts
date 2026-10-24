@@ -25,6 +25,7 @@ export type UploadCliAssetsResult =
   | { ok: false; code: 'missing-assets'; assetsDir: string; missing: string[] }
   | { ok: false; code: 'invalid-checksums' }
   | { ok: false; code: 'github-auth-failed' }
+  | { ok: false; code: 'missing-workflow-token' }
   | { ok: false; code: 'github-release-view-failed' }
   | { ok: false; code: 'github-draft-failed' }
   | { ok: false; code: 'published-release-incomplete'; tag: string }
@@ -37,6 +38,8 @@ export type UploadCliAssetsOptions = {
   assetsDir?: string
   /** Keep a checksum-verified draft for a later provenance gate. */
   publish?: boolean
+  /** GitHub Actions passes its token explicitly; CircleCI mints its App token. */
+  auth?: 'app-token' | 'workflow-token'
 }
 
 /** Returns the complete GitHub Release asset set produced by package-assets.ts. */
@@ -130,10 +133,14 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
   const local = await localAssetDigests(assetsDir, expected)
   if (!local) return { ok: false, code: 'invalid-checksums' }
 
-  try {
-    await mintGithubTokens()
-  } catch {
-    return { ok: false, code: 'github-auth-failed' }
+  if (options.auth === 'workflow-token') {
+    if (!process.env.GH_TOKEN) return { ok: false, code: 'missing-workflow-token' }
+  } else {
+    try {
+      await mintGithubTokens()
+    } catch {
+      return { ok: false, code: 'github-auth-failed' }
+    }
   }
 
   let viewed = await io.gh.releaseView(tag)
@@ -226,6 +233,9 @@ export function renderUploadCliAssetsResult(result: UploadCliAssetsResult): numb
     case 'github-auth-failed':
       io.console.error('Failed to authenticate with GitHub for CLI release delivery.')
       break
+    case 'missing-workflow-token':
+      io.console.error('GH_TOKEN is required for GitHub Actions CLI release delivery.')
+      break
     case 'github-release-view-failed':
       io.console.error('Failed to inspect the GitHub Release state.')
       break
@@ -254,6 +264,11 @@ export function renderUploadCliAssetsResult(result: UploadCliAssetsResult): numb
 
 if (import.meta.main) {
   process.exit(
-    renderUploadCliAssetsResult(await uploadCliAssets({ publish: process.env.FACET_RELEASE_PUBLISH !== 'false' })),
+    renderUploadCliAssetsResult(
+      await uploadCliAssets({
+        publish: process.env.FACET_RELEASE_PUBLISH !== 'false',
+        auth: process.env.FACET_RELEASE_AUTH === 'workflow-token' ? 'workflow-token' : 'app-token',
+      }),
+    ),
   )
 }
