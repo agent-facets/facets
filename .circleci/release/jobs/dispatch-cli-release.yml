@@ -6,9 +6,7 @@ environment:
   MISE_ENV: release
 steps:
   - setup-mise
-  - attach_workspace:
-      at: .
   - run:
-      name: Upload CLI release assets
-      command: bun scripts/release-cli/upload-assets.ts
+      name: Dispatch and await attested CLI archive release
+      command: bun scripts/release-cli/dispatch-attested-release.ts
   - notify-failure

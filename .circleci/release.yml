@@ -66,6 +66,19 @@ jobs:
             - packages/cli/dist
           root: .
       - notify-failure
+  dispatch-cli-release:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+    resource_class: small
+    steps:
+      - setup-mise
+      - run:
+          command: bun scripts/release-cli/dispatch-attested-release.ts
+          name: Dispatch and await attested CLI archive release
+      - notify-failure
   finalize-cli:
     docker:
       - image: cimg/base:current
@@ -80,25 +93,6 @@ jobs:
       - run:
           command: bun scripts/release-cli/finalize.ts
           name: Finalize CLI Release
-      - notify-failure
-  package-cli-assets:
-    docker:
-      - image: cimg/base:current
-    environment:
-      LEFTHOOK: "0"
-      MISE_ENV: release
-    resource_class: small
-    steps:
-      - setup-mise
-      - attach_workspace:
-          at: .
-      - run:
-          command: bun scripts/release-cli/package-assets.ts
-          name: Package CLI release assets
-      - persist_to_workspace:
-          paths:
-            - packages/cli/dist/release-assets
-          root: .
       - notify-failure
   publish-platform:
     docker:
@@ -131,21 +125,6 @@ jobs:
       - run:
           command: bun scripts/release/publish.ts
           name: Publish
-      - notify-failure
-  upload-cli-assets:
-    docker:
-      - image: cimg/base:current
-    environment:
-      LEFTHOOK: "0"
-      MISE_ENV: release
-    resource_class: small
-    steps:
-      - setup-mise
-      - attach_workspace:
-          at: .
-      - run:
-          command: bun scripts/release-cli/upload-assets.ts
-          name: Upload CLI release assets
       - notify-failure
 parameters:
   package:
@@ -185,19 +164,6 @@ workflows:
               only:
                 - /^agent-facets@\d+\..+/
           serial-group: << pipeline.project.slug >>/release-cli-build
-      - package-cli-assets:
-          context:
-            - slack-secrets
-            - github
-          filters:
-            branches:
-              ignore:
-                - /.*/
-            tags:
-              only:
-                - /^agent-facets@\d+\..+/
-          requires:
-            - build-cli
       - publish-platform:
           context:
             - turbo-cache
@@ -244,7 +210,7 @@ workflows:
           requires:
             - publish-platform
           serial-group: << pipeline.project.slug >>/release-cli-finalize
-      - upload-cli-assets:
+      - dispatch-cli-release:
           context:
             - bot-context
             - slack-secrets
@@ -258,5 +224,4 @@ workflows:
                 - /^agent-facets@\d+\..+/
           requires:
             - finalize-cli
-            - package-cli-assets
           serial-group: << pipeline.project.slug >>/release-cli-assets

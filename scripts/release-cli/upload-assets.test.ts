@@ -125,6 +125,25 @@ describe('upload-assets.ts', () => {
     expect(events).toEqual(['draft', 'upload', 'publish'])
   })
 
+  test('stages a verified draft without publishing it', async () => {
+    await writeAssets()
+    spyOn(io.gh, 'releaseView')
+      .mockResolvedValueOnce(shellResult('', 1))
+      .mockResolvedValueOnce(release())
+      .mockResolvedValueOnce(release(expectedRemoteAssets()))
+    spyOn(io.gh, 'releaseCreateDraft').mockResolvedValue('')
+    spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    const publish = spyOn(io.gh, 'releasePublish')
+
+    expect(await uploadCliAssets({ assetsDir, publish: false })).toEqual({
+      ok: true,
+      tag: 'agent-facets@0.4.0',
+      count: 9,
+      published: false,
+    })
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('repairs a partial draft and never creates a second release', async () => {
     await writeAssets()
     const draft = spyOn(io.gh, 'releaseCreateDraft')

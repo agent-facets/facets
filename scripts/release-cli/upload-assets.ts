@@ -35,6 +35,8 @@ export type UploadCliAssetsResult =
 export type UploadCliAssetsOptions = {
   /** Override for tests; production uses the packaged CLI asset directory. */
   assetsDir?: string
+  /** Keep a checksum-verified draft for a later provenance gate. */
+  publish?: boolean
 }
 
 /** Returns the complete GitHub Release asset set produced by package-assets.ts. */
@@ -107,7 +109,7 @@ async function releaseNotes(version: string): Promise<string | undefined> {
 }
 
 export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Promise<UploadCliAssetsResult> {
-  const tag = process.env.CIRCLE_TAG
+  const tag = process.env.RELEASE_TAG ?? process.env.CIRCLE_TAG
   if (!tag) return { ok: false, code: 'missing-tag' }
 
   const parsed = parseTag(tag)
@@ -171,6 +173,8 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
   if (!release?.isDraft || !remoteAssetsMatch(release, local)) {
     return { ok: false, code: 'remote-assets-mismatch', tag }
   }
+
+  if (options.publish === false) return { ok: true, tag, count: expected.length, published: false }
 
   try {
     await io.gh.releasePublish(tag)
@@ -248,4 +252,8 @@ export function renderUploadCliAssetsResult(result: UploadCliAssetsResult): numb
   return 1
 }
 
-if (import.meta.main) process.exit(renderUploadCliAssetsResult(await uploadCliAssets()))
+if (import.meta.main) {
+  process.exit(
+    renderUploadCliAssetsResult(await uploadCliAssets({ publish: process.env.FACET_RELEASE_PUBLISH !== 'false' })),
+  )
+}
