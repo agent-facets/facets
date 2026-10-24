@@ -28,4 +28,9 @@ export const githubIo = {
   releaseUpload: (tag: string, assets: string[]) => $`gh release upload ${tag} ${assets} --clobber`,
   /** Publishes an existing draft Release after its assets have been verified. */
   releasePublish: (tag: string) => $`gh release edit ${tag} --draft=false`.text(),
+  workflowDispatch: (workflow: string, ref: string, tag: string) =>
+    $`gh workflow run ${workflow} --repo ${GITHUB_REPO} --ref ${ref} -f tag=${tag}`.nothrow(),
+  workflowLatestDispatchRun: (workflow: string, tag: string) =>
+    $`gh run list ${workflow} --repo ${GITHUB_REPO} --branch ${tag} --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId'`.nothrow(),
+  workflowWatch: (runId: string) => $`gh run watch ${runId} --repo ${GITHUB_REPO} --exit-status`.nothrow(),
 }

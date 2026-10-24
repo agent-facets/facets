@@ -1,0 +1,41 @@
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { io } from '../lib/io'
+import { shellResult, silenceIO } from '../lib/test-helpers'
+import { dispatchAttestedRelease } from './dispatch-attested-release'
+
+describe('dispatch-attested-release.ts', () => {
+  beforeEach(() => {
+    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    silenceIO()
+    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('token')
+  })
+
+  afterEach(() => {
+    mock.restore()
+    delete process.env.CIRCLE_TAG
+    delete process.env.GH_TOKEN
+    delete process.env.GITHUB_TOKEN
+  })
+
+  test('dispatches the tag and waits for the matching workflow run', async () => {
+    const dispatch = spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult())
+    spyOn(io.gh, 'workflowLatestDispatchRun').mockResolvedValue(shellResult('123\n'))
+    const watch = spyOn(io.gh, 'workflowWatch').mockResolvedValue(shellResult())
+
+    expect(await dispatchAttestedRelease()).toEqual({ ok: true, tag: 'agent-facets@0.4.0', runId: '123' })
+    expect(dispatch).toHaveBeenCalledWith('release-cli-assets.yml', 'agent-facets@0.4.0', 'agent-facets@0.4.0')
+    expect(watch).toHaveBeenCalledWith('123')
+  })
+
+  test('reports a dispatch permission failure without waiting for a run', async () => {
+    spyOn(io.gh, 'workflowDispatch').mockResolvedValue(shellResult('', 1))
+    const listed = spyOn(io.gh, 'workflowLatestDispatchRun')
+
+    expect(await dispatchAttestedRelease()).toEqual({
+      ok: false,
+      code: 'workflow-dispatch-failed',
+      tag: 'agent-facets@0.4.0',
+    })
+    expect(listed).not.toHaveBeenCalled()
+  })
+})

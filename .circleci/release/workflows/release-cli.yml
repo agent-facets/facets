@@ -13,19 +13,6 @@ jobs:
         branches:
           ignore:
             - /.*/
-  - package-cli-assets:
-      context:
-        - slack-secrets
-        - github
-      requires:
-        - build-cli
-      filters:
-        tags:
-          only:
-            - /^agent-facets@\d+\..+/
-        branches:
-          ignore:
-            - /.*/
   - publish-platform:
       matrix:
         parameters:
@@ -72,7 +59,7 @@ jobs:
         branches:
           ignore:
             - /.*/
-  - upload-cli-assets:
+  - dispatch-cli-release:
       serial-group: << pipeline.project.slug >>/release-cli-assets
       context:
         - bot-context
@@ -80,7 +67,6 @@ jobs:
         - github
       requires:
         - finalize-cli
-        - package-cli-assets
       filters:
         tags:
           only:

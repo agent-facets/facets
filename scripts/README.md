@@ -18,7 +18,8 @@ scripts/
 │   ├── publish-cli-package.ts  # Synthesize + publish CLI wrapper
 │   ├── finalize.ts             # Orchestrate npm readiness and wrapper publication
 │   ├── package-assets.ts        # Create portable GitHub Release archives + checksums
-│   ├── upload-assets.ts         # Draft, upload, verify, and publish CLI release archives
+│   ├── upload-assets.ts         # Stage or publish a checksum-verified CLI release draft
+│   ├── dispatch-attested-release.ts # Dispatch and await GitHub's attested archive release
 │   ├── verify.ts               # Wait for CLI packages to be available on npm (20m deadline)
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions
@@ -91,6 +92,13 @@ points throw. That is a regression guard against code reaching for the
 network, not an operating-system sandbox.
 
 ## Two Pipelines
+
+CLI archive release delivery is completed by `.github/workflows/release-cli-assets.yml`.
+CircleCI dispatches it only after npm publication has finalized. GitHub Actions
+rebuilds the archives from the exact tag, checks their SHA-256 values, publishes
+GitHub/Sigstore provenance attestations, verifies those attestations, and only
+then publishes the draft GitHub Release. This keeps the provenance build inside
+the CI provider that supplies the OIDC identity used by GitHub attestations.
 
 There are two independent release-pipeline workflows, both triggered by git tag
 patterns:
