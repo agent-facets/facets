@@ -101,7 +101,9 @@ then publishes the draft GitHub Release. This keeps the provenance build inside
 the CI provider that supplies the OIDC identity used by GitHub attestations.
 GitHub Actions uses its scoped workflow token for release delivery; CircleCI
 uses its GitHub App token only for the dispatch and watches the run ID returned
-by GitHub, never the latest run for a tag.
+by GitHub, never the latest run for a tag. After that exact run succeeds,
+CircleCI sends the successful-release Slack notification using its existing
+Slack context; GitHub Actions never receives Slack credentials.
 
 There are two independent release-pipeline workflows, both triggered by git tag
 patterns:

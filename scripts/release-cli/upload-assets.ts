@@ -40,6 +40,8 @@ export type UploadCliAssetsOptions = {
   publish?: boolean
   /** GitHub Actions passes its token explicitly; CircleCI mints its App token. */
   auth?: 'app-token' | 'workflow-token'
+  /** CircleCI sends the successful archive-release notification after it watches Actions succeed. */
+  notify?: boolean
 }
 
 /** Returns the complete GitHub Release asset set produced by package-assets.ts. */
@@ -193,10 +195,12 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
   if (!release || release.isDraft || !remoteAssetsMatch(release, local)) {
     return { ok: false, code: 'github-publish-failed' }
   }
-  try {
-    await slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${release.url}|${tag}>`)
-  } catch {
-    io.console.error(`GitHub Release ${tag} was published, but Slack notification failed.`)
+  if (options.notify !== false) {
+    try {
+      await slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${release.url}|${tag}>`)
+    } catch {
+      io.console.error(`GitHub Release ${tag} was published, but Slack notification failed.`)
+    }
   }
   return { ok: true, tag, count: expected.length, published: true }
 }
@@ -268,6 +272,7 @@ if (import.meta.main) {
       await uploadCliAssets({
         publish: process.env.FACET_RELEASE_PUBLISH !== 'false',
         auth: process.env.FACET_RELEASE_AUTH === 'workflow-token' ? 'workflow-token' : 'app-token',
+        notify: process.env.FACET_RELEASE_NOTIFY !== 'false',
       }),
     ),
   )

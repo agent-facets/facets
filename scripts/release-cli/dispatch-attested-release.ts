@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 
+import { slackNotify } from '../lib/announce'
 /** Dispatch and await the GitHub Actions workflow that owns CLI archive delivery. */
 import { mintGithubTokens } from '../lib/ci'
+import { GITHUB_REPO, SLACK_CHANNELS } from '../lib/constants'
 import { io } from '../lib/io'
 
 const WORKFLOW = 'release-cli-assets.yml'
@@ -12,6 +14,22 @@ export type DispatchAttestedReleaseResult =
   | { ok: false; code: 'workflow-dispatch-failed'; tag: string }
   | { ok: false; code: 'workflow-dispatch-response-invalid'; tag: string }
   | { ok: false; code: 'workflow-run-failed'; tag: string; runId: string }
+
+export interface DispatchAttestedReleaseOptions {
+  /** Best-effort post-publication notification, injected by tests. */
+  notify?: (tag: string) => Promise<void>
+}
+
+export async function notifyAttestedRelease(tag: string): Promise<void> {
+  try {
+    await slackNotify(
+      SLACK_CHANNELS.auto_cli_deploys,
+      `🚀 Published: <https://github.com/${GITHUB_REPO}/releases/tag/${encodeURIComponent(tag)}|${tag}>`,
+    )
+  } catch {
+    io.console.error(`GitHub Release ${tag} was published, but Slack notification failed.`)
+  }
+}
 
 function parseDispatchedRunId(stdout: Buffer): string | undefined {
   try {
@@ -24,7 +42,9 @@ function parseDispatchedRunId(stdout: Buffer): string | undefined {
   }
 }
 
-export async function dispatchAttestedRelease(): Promise<DispatchAttestedReleaseResult> {
+export async function dispatchAttestedRelease(
+  options: DispatchAttestedReleaseOptions = {},
+): Promise<DispatchAttestedReleaseResult> {
   const tag = process.env.CIRCLE_TAG
   if (!tag) return { ok: false, code: 'missing-tag' }
 
@@ -40,7 +60,9 @@ export async function dispatchAttestedRelease(): Promise<DispatchAttestedRelease
   if (!runId) return { ok: false, code: 'workflow-dispatch-response-invalid', tag }
 
   const watched = await io.gh.workflowWatch(runId)
-  return watched.exitCode === 0 ? { ok: true, tag, runId } : { ok: false, code: 'workflow-run-failed', tag, runId }
+  if (watched.exitCode !== 0) return { ok: false, code: 'workflow-run-failed', tag, runId }
+  await (options.notify ?? notifyAttestedRelease)(tag)
+  return { ok: true, tag, runId }
 }
 
 export function renderDispatchAttestedReleaseResult(result: DispatchAttestedReleaseResult): number {

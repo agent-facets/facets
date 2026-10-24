@@ -6,7 +6,8 @@ This pipeline's GitHub Release creation remains independent of the CLI binary
 pipeline. CLI releases are published only after their draft release archives
 have been uploaded, digest-verified, and GitHub/Sigstore-provenance-verified;
 see `../release-cli/README.md`. CircleCI dispatches the archive workflow after
-npm readiness and watches the exact run ID GitHub returns.
+npm readiness, watches the exact run ID GitHub returns, and sends the
+successful-release Slack notification only after that run succeeds.
 
 ## Flow
 

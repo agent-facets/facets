@@ -52,6 +52,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           FACET_RELEASE_PUBLISH: 'false'
           FACET_RELEASE_AUTH: workflow-token
+          FACET_RELEASE_NOTIFY: 'false'
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/release-cli/upload-assets.ts
       - name: Attest release archives
@@ -74,5 +75,6 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           FACET_RELEASE_AUTH: workflow-token
+          FACET_RELEASE_NOTIFY: 'false'
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/release-cli/upload-assets.ts

@@ -101,6 +101,10 @@ API. If the App lacks workflow-dispatch permission, delivery fails before a
 release is published; grant that external permission only through the approved
 GitHub App administration process.
 
+GitHub Actions suppresses the archive-release Slack notification because it
+does not receive Slack credentials. After it watches the exact successful run,
+CircleCI sends that best-effort notification through its existing Slack context.
+
 If upload, remote-digest verification, or provenance verification fails, the
 draft remains for a safe retry.
 A complete matching published release is an idempotent success. A published
