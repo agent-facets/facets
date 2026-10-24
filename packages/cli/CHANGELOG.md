@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.36.2
+
+### Patch Changes
+
+- [#602](https://github.com/agent-facets/facets/pull/602) [`21af6f8`](https://github.com/agent-facets/facets/commit/21af6f871f639baf1c5c622b01bffa6ffb460b01) Thanks [@JosephBouSaada](https://github.com/JosephBouSaada)! - Publish CLI GitHub Release archives before immutable releases are made public, verifying their SHA-256 digests first.
+
 ## 0.36.1
 
 ### Patch Changes
