@@ -4,7 +4,10 @@ Publishes `@agent-facets/protocol`, `@agent-facets/brand`, `@agent-facets/adapte
 
 This pipeline's GitHub Release creation remains independent of the CLI binary
 pipeline. CLI releases are published only after their draft release archives
-have been uploaded and digest-verified; see `../release-cli/README.md`.
+have been uploaded, digest-verified, and GitHub/Sigstore-provenance-verified;
+see `../release-cli/README.md`. CircleCI dispatches the archive workflow after
+npm readiness, watches the exact run ID GitHub returns, and sends the
+successful-release Slack notification only after that run succeeds.
 
 ## Flow
 

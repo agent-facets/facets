@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-test('npm deployment has no direct or transitive dependency on archive packaging', async () => {
+test('npm deployment precedes the attested GitHub archive release', async () => {
   const source = await Bun.file(new URL('../../.circleci/release/workflows/release-cli.yml', import.meta.url)).text()
   const workflow = Bun.YAML.parse(source) as {
     jobs: Record<string, { requires?: string[]; 'serial-group'?: string }>[]
@@ -15,16 +15,11 @@ test('npm deployment has no direct or transitive dependency on archive packaging
     return seen
   }
 
-  expect(jobs.has('package-cli-assets')).toBe(true)
-  expect(jobs.has('upload-cli-assets')).toBe(true)
-  expect([...dependencies('package-cli-assets')]).toEqual(['build-cli'])
+  expect(jobs.has('package-cli-assets')).toBe(false)
+  expect(jobs.has('upload-cli-assets')).toBe(false)
+  expect(jobs.has('dispatch-cli-release')).toBe(true)
   expect([...dependencies('publish-platform')]).toEqual(['build-cli'])
   expect([...dependencies('finalize-cli')]).toEqual(['publish-platform', 'build-cli'])
-  expect([...dependencies('upload-cli-assets')]).toEqual([
-    'finalize-cli',
-    'publish-platform',
-    'build-cli',
-    'package-cli-assets',
-  ])
-  expect(jobs.get('upload-cli-assets')?.['serial-group']).toBe('<< pipeline.project.slug >>/release-cli-assets')
+  expect([...dependencies('dispatch-cli-release')]).toEqual(['finalize-cli', 'publish-platform', 'build-cli'])
+  expect(jobs.get('dispatch-cli-release')?.['serial-group']).toBe('<< pipeline.project.slug >>/release-cli-assets')
 })

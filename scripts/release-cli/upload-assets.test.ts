@@ -95,6 +95,29 @@ describe('upload-assets.ts', () => {
     expect(await uploadCliAssets({ assetsDir })).toEqual({ ok: false, code: 'invalid-checksums' })
   })
 
+  test('uses only the supplied workflow token in GitHub Actions mode', async () => {
+    await writeAssets()
+    process.env.GH_TOKEN = 'workflow-token'
+    const mint = spyOn(io.shell, 'mintGitHubAppToken')
+    spyOn(io.gh, 'releaseView').mockResolvedValue(release(expectedRemoteAssets(), false))
+
+    expect(await uploadCliAssets({ assetsDir, auth: 'workflow-token' })).toMatchObject({ ok: true, published: false })
+    expect(mint).not.toHaveBeenCalled()
+  })
+
+  test('rejects GitHub Actions mode without a workflow token before release mutation', async () => {
+    await writeAssets()
+    const mint = spyOn(io.shell, 'mintGitHubAppToken')
+    const view = spyOn(io.gh, 'releaseView')
+
+    expect(await uploadCliAssets({ assetsDir, auth: 'workflow-token' })).toEqual({
+      ok: false,
+      code: 'missing-workflow-token',
+    })
+    expect(mint).not.toHaveBeenCalled()
+    expect(view).not.toHaveBeenCalled()
+  })
+
   test('creates a draft, uploads, verifies, publishes, then notifies', async () => {
     await writeAssets()
     const events: string[] = []
@@ -123,6 +146,25 @@ describe('upload-assets.ts', () => {
       published: true,
     })
     expect(events).toEqual(['draft', 'upload', 'publish'])
+  })
+
+  test('stages a verified draft without publishing it', async () => {
+    await writeAssets()
+    spyOn(io.gh, 'releaseView')
+      .mockResolvedValueOnce(shellResult('', 1))
+      .mockResolvedValueOnce(release())
+      .mockResolvedValueOnce(release(expectedRemoteAssets()))
+    spyOn(io.gh, 'releaseCreateDraft').mockResolvedValue('')
+    spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
+    const publish = spyOn(io.gh, 'releasePublish')
+
+    expect(await uploadCliAssets({ assetsDir, publish: false })).toEqual({
+      ok: true,
+      tag: 'agent-facets@0.4.0',
+      count: 9,
+      published: false,
+    })
+    expect(publish).not.toHaveBeenCalled()
   })
 
   test('repairs a partial draft and never creates a second release', async () => {

@@ -25,6 +25,7 @@ export type UploadCliAssetsResult =
   | { ok: false; code: 'missing-assets'; assetsDir: string; missing: string[] }
   | { ok: false; code: 'invalid-checksums' }
   | { ok: false; code: 'github-auth-failed' }
+  | { ok: false; code: 'missing-workflow-token' }
   | { ok: false; code: 'github-release-view-failed' }
   | { ok: false; code: 'github-draft-failed' }
   | { ok: false; code: 'published-release-incomplete'; tag: string }
@@ -35,6 +36,12 @@ export type UploadCliAssetsResult =
 export type UploadCliAssetsOptions = {
   /** Override for tests; production uses the packaged CLI asset directory. */
   assetsDir?: string
+  /** Keep a checksum-verified draft for a later provenance gate. */
+  publish?: boolean
+  /** GitHub Actions passes its token explicitly; CircleCI mints its App token. */
+  auth?: 'app-token' | 'workflow-token'
+  /** CircleCI sends the successful archive-release notification after it watches Actions succeed. */
+  notify?: boolean
 }
 
 /** Returns the complete GitHub Release asset set produced by package-assets.ts. */
@@ -107,7 +114,7 @@ async function releaseNotes(version: string): Promise<string | undefined> {
 }
 
 export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Promise<UploadCliAssetsResult> {
-  const tag = process.env.CIRCLE_TAG
+  const tag = process.env.RELEASE_TAG ?? process.env.CIRCLE_TAG
   if (!tag) return { ok: false, code: 'missing-tag' }
 
   const parsed = parseTag(tag)
@@ -128,10 +135,14 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
   const local = await localAssetDigests(assetsDir, expected)
   if (!local) return { ok: false, code: 'invalid-checksums' }
 
-  try {
-    await mintGithubTokens()
-  } catch {
-    return { ok: false, code: 'github-auth-failed' }
+  if (options.auth === 'workflow-token') {
+    if (!process.env.GH_TOKEN) return { ok: false, code: 'missing-workflow-token' }
+  } else {
+    try {
+      await mintGithubTokens()
+    } catch {
+      return { ok: false, code: 'github-auth-failed' }
+    }
   }
 
   let viewed = await io.gh.releaseView(tag)
@@ -172,6 +183,8 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
     return { ok: false, code: 'remote-assets-mismatch', tag }
   }
 
+  if (options.publish === false) return { ok: true, tag, count: expected.length, published: false }
+
   try {
     await io.gh.releasePublish(tag)
   } catch {
@@ -182,10 +195,12 @@ export async function uploadCliAssets(options: UploadCliAssetsOptions = {}): Pro
   if (!release || release.isDraft || !remoteAssetsMatch(release, local)) {
     return { ok: false, code: 'github-publish-failed' }
   }
-  try {
-    await slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${release.url}|${tag}>`)
-  } catch {
-    io.console.error(`GitHub Release ${tag} was published, but Slack notification failed.`)
+  if (options.notify !== false) {
+    try {
+      await slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${release.url}|${tag}>`)
+    } catch {
+      io.console.error(`GitHub Release ${tag} was published, but Slack notification failed.`)
+    }
   }
   return { ok: true, tag, count: expected.length, published: true }
 }
@@ -222,6 +237,9 @@ export function renderUploadCliAssetsResult(result: UploadCliAssetsResult): numb
     case 'github-auth-failed':
       io.console.error('Failed to authenticate with GitHub for CLI release delivery.')
       break
+    case 'missing-workflow-token':
+      io.console.error('GH_TOKEN is required for GitHub Actions CLI release delivery.')
+      break
     case 'github-release-view-failed':
       io.console.error('Failed to inspect the GitHub Release state.')
       break
@@ -248,4 +266,14 @@ export function renderUploadCliAssetsResult(result: UploadCliAssetsResult): numb
   return 1
 }
 
-if (import.meta.main) process.exit(renderUploadCliAssetsResult(await uploadCliAssets()))
+if (import.meta.main) {
+  process.exit(
+    renderUploadCliAssetsResult(
+      await uploadCliAssets({
+        publish: process.env.FACET_RELEASE_PUBLISH !== 'false',
+        auth: process.env.FACET_RELEASE_AUTH === 'workflow-token' ? 'workflow-token' : 'app-token',
+        notify: process.env.FACET_RELEASE_NOTIFY !== 'false',
+      }),
+    ),
+  )
+}

@@ -37,12 +37,12 @@ Tag push: agent-facets@X.Y.Z
                         │
                         ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  upload-assets.ts                                              │
+│  GitHub Actions: release-cli-assets.yml                        │
 │                                                               │
-│  1. Create or reuse a draft GitHub Release                    │
-│  2. Upload archives + checksums                                │
-│  3. Verify names, sizes, and SHA-256 digests remotely          │
-│  4. Publish the verified draft + notify Slack                  │
+│  1. Rebuild + package archives from the immutable tag          │
+│  2. Stage and digest-verify a draft GitHub Release             │
+│  3. Create + verify GitHub/Sigstore provenance attestations    │
+│  4. Publish the verified draft                                 │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,8 +52,9 @@ Tag push: agent-facets@X.Y.Z
 |---------------------------|-----------------------------|-------------------------------------------------------------|
 | `build.test.ts`           | (local tests)               | Verify actual build options, native preflight and isolated policy |
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
-| `package-assets.ts`       | `package-cli-assets`        | Package existing binaries into archives and checksums       |
-| `upload-assets.ts`        | `upload-cli-assets`         | Deliver, verify, and publish packaged archives              |
+| `package-assets.ts`       | GitHub Actions              | Package existing binaries into archives and checksums       |
+| `upload-assets.ts`        | GitHub Actions              | Stage or publish checksum-verified release archives         |
+| `dispatch-attested-release.ts` | `dispatch-cli-release` | Dispatch and await GitHub's attested archive release workflow |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate npm: wait for platforms → publish wrapper → wait for wrapper |
@@ -74,23 +75,38 @@ windows-arm64, windows-x64, windows-x64-baseline
 
 ## Release assets
 
-After `build-cli`, `package-cli-assets` runs alongside npm publishing:
+After CircleCI publishes and verifies npm packages, it dispatches GitHub
+Actions to build and release the archives from the same immutable tag:
 
 ```text
-build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper) ────────────┐
-            └─ package-cli-assets (archives + checksums) ──────────────────────┴─ upload-cli-assets (draft → verify → publish)
+build-cli ── publish-platform (×12) ── finalize-cli (npm wrapper)
+                                              │
+                                              └─ dispatch-cli-release → GitHub Actions (build → draft → attest → verify → publish)
 ```
 
-Neither npm publishing nor finalization requires the packaging job. Packaging
-failures are reported by CircleCI and Slack but do not block npm deployment.
-`upload-cli-assets` waits for both branches of the workflow. It creates (or
-reuses) a **draft** GitHub Release, validates local archive bytes against
-`checksums.txt`, uploads the complete asset set, and validates every remote
-asset's name, size, and GitHub SHA-256 digest before publishing the draft and
-notifying Slack. GitHub makes a published release immutable, so publishing
-before this verification would make a failed upload unrecoverable.
+Neither npm publishing nor finalization depends on release archive creation.
+After finalization, CircleCI dispatches and waits for the GitHub Actions
+workflow. That workflow creates (or reuses) a **draft** GitHub Release,
+validates local archive bytes against `checksums.txt`, uploads the complete
+asset set, validates every remote asset's name, size, and GitHub SHA-256 digest,
+then generates and verifies GitHub/Sigstore provenance attestations for every
+archive before publishing. GitHub makes a published release immutable, so
+publishing before either verification would make a failed delivery unrecoverable.
 
-If upload or remote verification fails, the draft remains for a safe retry.
+The GitHub Actions workflow passes its scoped `GITHUB_TOKEN` as `GH_TOKEN` and
+selects `FACET_RELEASE_AUTH=workflow-token`; it never receives CircleCI's
+GitHub App credentials. The CircleCI dispatcher retains App-token minting only
+to dispatch and watch the exact workflow run ID returned by GitHub's dispatch
+API. If the App lacks workflow-dispatch permission, delivery fails before a
+release is published; grant that external permission only through the approved
+GitHub App administration process.
+
+GitHub Actions suppresses the archive-release Slack notification because it
+does not receive Slack credentials. After it watches the exact successful run,
+CircleCI sends that best-effort notification through its existing Slack context.
+
+If upload, remote-digest verification, or provenance verification fails, the
+draft remains for a safe retry.
 A complete matching published release is an idempotent success. A published
 release with missing or mismatched assets is intentionally not mutable: publish
 a new version rather than retrying with `--clobber`. This is why
