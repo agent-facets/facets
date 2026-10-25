@@ -1,0 +1,47 @@
+---
+title: Install with mise
+description: Install and manage the CLI with mise
+---
+
+Install the `facet` CLI through [mise](https://mise.jdx.dev/getting-started.html). Install and activate mise in your shell before continuing.
+
+<Steps>
+  <Step title="Install the CLI">
+    ```sh
+    mise use -g 'github:agent-facets/facets[version_prefix=agent-facets@]@latest'
+    ```
+
+    This configures Facet globally. Omit `-g` to configure it for the current project instead.
+
+    Keep the explicit GitHub backend and `version_prefix` option. The `facet` registry shorthand is not the supported installation command yet.
+  </Step>
+
+  <Step title="Verify the active binary">
+    ```sh
+    mise which facet
+    facet --version
+    ```
+
+    If `facet` is missing or resolves to another installation, check your [mise shell activation](https://mise.jdx.dev/dev-tools/shims.html).
+  </Step>
+
+  <Step title="Connect your coding tool">
+    Continue [setup](/guides/setup) to connect an adapter for your coding tool.
+  </Step>
+</Steps>
+
+## Keep the CLI current
+
+Use [`facet self-update`](/cli/self-update#mise-installs) to preview and apply an update. Automatic updates for this installation method require Facet 0.36.4 or newer.
+
+For an older binary, update through mise first:
+
+```sh
+mise use -g 'github:agent-facets/facets[version_prefix=agent-facets@]@latest'
+```
+
+For a project installation, omit `-g` and run the command from that project.
+
+<Note>
+  mise 2026.10.19 has a known URL-lookup issue with `mise install --locked` for this backend. If you need locked installations, verify support in your mise version before adopting this method. Do not disable release verification as a workaround.
+</Note>

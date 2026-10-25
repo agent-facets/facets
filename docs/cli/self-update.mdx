@@ -35,7 +35,7 @@ facet self-update --dry-run        # preview without changing anything
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Updated, already current, or a completed `--dry-run`. |
+| `0` | Updated, already current, a completed `--dry-run`, or manual mise guidance printed. |
 | `1` | Dev-mode refusal, network error, or malformed registry data. |
 | `2` | An unexpected error escaped command handling, or the installer exited `2`. |
 | other | Passed through from the underlying installer or package manager. |
@@ -50,9 +50,22 @@ A `--dry-run` names the current and target versions, the detected install method
 
 ### Install methods
 
-The update path follows how the binary was installed: the curl installer, or an `npm`, `yarn`, `pnpm`, or `bun` global install.
+The update path follows how the binary was installed: the curl installer, an `npm`, `yarn`, `pnpm`, or `bun` global install, or a verified [mise install](#mise-installs).
 
 If the location cannot be classified, self-update falls back to the curl installer and warns when `facet` on your `PATH` still resolves elsewhere afterwards, so you can remove the older copy or reorder your `PATH`.
+
+### Mise installs
+
+Starting with Facet 0.36.4, self-update supports mise installations using `github:agent-facets/facets` with `version_prefix=agent-facets@`. See [Install with mise](/guides/install-with-mise) for setup.
+
+```sh
+facet self-update --dry-run
+facet self-update
+```
+
+The update preserves the existing mise configuration file and backend options, whether the installation is global, project-local, or uses a custom config path. A preview shows `mise use --path` with that config path and the target version.
+
+If mise owns the binary but its provider, options, or configuration cannot be verified, self-update prints manual guidance without changing the configuration or invoking another installer. This guidance currently exits with `0`; read the output to distinguish it from a completed update.
 
 ### Environment
 
@@ -78,9 +91,16 @@ If the location cannot be classified, self-update falls back to the curl install
 
     **Fix:** check connectivity and retry. If you point `FACET_CLI_REGISTRY` at a mirror, confirm it serves the `agent-facets` package.
   </Accordion>
+
+  <Accordion title="mise could not be safely updated automatically">
+    **Cause:** mise owns the running binary, but installation metadata is unavailable, invalid, or identifies an unsupported provider or version prefix.
+
+    **Fix:** inspect `mise which facet --plugin` and your existing mise configuration. Update the Facet entry in that same file manually, preserving its provider, options, and scope. Do not replace it with an unscoped `mise use` command from an unrelated directory. See [supported mise installs](#mise-installs).
+  </Accordion>
 </AccordionGroup>
 
 ## See also
 
 - [`facet update`](/cli/update)
 - [Environment variables](/cli/env)
+- [Install with mise](/guides/install-with-mise)
