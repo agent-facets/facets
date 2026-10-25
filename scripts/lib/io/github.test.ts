@@ -40,3 +40,28 @@ test('workflow dispatch uses the REST endpoint and passes the immutable tag as b
     ].join('\n'),
   )
 })
+
+test('workflow dispatch passes the current environment to gh', async () => {
+  binDir = await mkdtemp(resolve(tmpdir(), 'facet-gh-'))
+  const tokenPath = resolve(binDir, 'token')
+  const ghPath = resolve(binDir, 'gh')
+  const previousToken = process.env.GH_TOKEN
+  await Bun.write(ghPath, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > "${tokenPath}"\n`)
+  await chmod(ghPath, 0o755)
+
+  try {
+    process.env.GH_TOKEN = 'minted-installation-token'
+    const result = await githubIo.workflowDispatch(
+      'release-cli-assets.yml',
+      'agent-facets@0.4.0',
+      'agent-facets@0.4.0',
+      ghPath,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(await readFile(tokenPath, 'utf8')).toBe('minted-installation-token')
+  } finally {
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  }
+})
