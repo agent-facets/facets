@@ -3,6 +3,7 @@ import { resolve as pathResolve } from 'node:path'
 
 const BACKEND = 'github:agent-facets/facets'
 const VERSION_PREFIX = 'agent-facets@'
+const PROBE_TIMEOUT_MS = 3000
 
 export interface MiseInstall {
   backend: typeof BACKEND
@@ -24,7 +25,12 @@ export interface MiseDependencies {
 
 async function defaultRun(command: string[]): Promise<string | null> {
   try {
-    const proc = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe' })
+    const proc = Bun.spawn(command, {
+      stdout: 'pipe',
+      stderr: 'ignore',
+      timeout: PROBE_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    })
     const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
     return code === 0 ? stdout.trim() : null
   } catch {

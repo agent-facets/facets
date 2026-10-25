@@ -75,13 +75,18 @@ describe('formatSelfUpdateError', () => {
     expect(out).toContain('network error: timeout')
   })
 
-  test('renders mise guidance without implying an automatic config write', () => {
+  test.each([
+    'unsupported-tool',
+    'metadata-unavailable',
+    'invalid-metadata',
+  ] as const)('renders %s guidance without suggesting an unverified command', (reason) => {
     const out = formatSelfUpdateError({
       kind: 'mise-guidance',
-      reason: 'unsupported-tool',
-      command: "mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+      reason,
     })
     expect(out).toContain('could not be safely updated automatically')
-    expect(out).toContain('mise use')
+    expect(out).toContain('update the facet entry in your existing mise configuration manually')
+    expect(out).not.toContain('run:')
+    expect(out).not.toContain('mise use')
   })
 })

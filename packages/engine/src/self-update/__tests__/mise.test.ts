@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { resolveMiseInstall } from '../mise.ts'
 
 const metadata = JSON.stringify({
@@ -17,6 +17,52 @@ function runFor(which: string | null, tool: string | null = metadata, plugin = '
 }
 
 describe('resolveMiseInstall', () => {
+  test.each([1, 137])('failed or timed-out probe (exit %s) does not claim mise ownership', async (exitCode) => {
+    type ProbeSpawn = (command: string[], options: unknown) => { stdout: Uint8Array; exited: Promise<number> }
+    const spawn = spyOn(Bun, 'spawn') as unknown as Mock<ProbeSpawn>
+    spawn.mockImplementation(() => ({
+      stdout: new TextEncoder().encode('/mise/facet\n'),
+      exited: Promise.resolve(exitCode),
+    }))
+    try {
+      const result = await resolveMiseInstall({ execPath: '/mise/facet', realpath: (path) => path })
+      expect(result).toEqual({ kind: 'not-mise' })
+      expect(spawn).toHaveBeenCalledTimes(1)
+      expect(spawn.mock.calls[0]).toEqual([
+        ['mise', 'which', 'facet'],
+        { stdout: 'pipe', stderr: 'ignore', timeout: 3000, killSignal: 'SIGKILL' },
+      ])
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('all metadata probes are bounded and successful stdout is trimmed', async () => {
+    type ProbeSpawn = (command: string[], options: unknown) => { stdout: Uint8Array; exited: Promise<number> }
+    const spawn = spyOn(Bun, 'spawn') as unknown as Mock<ProbeSpawn>
+    spawn.mockImplementation((command) => ({
+      stdout: new TextEncoder().encode(
+        command.includes('--json')
+          ? metadata
+          : command.includes('--plugin')
+            ? 'github:agent-facets/facets\n'
+            : '/mise/facet\n',
+      ),
+      exited: Promise.resolve(0),
+    }))
+    try {
+      const result = await resolveMiseInstall({ execPath: '/mise/facet', realpath: (path) => path })
+      if (result.kind !== 'updatable') expect.unreachable()
+      expect(result.install.configPath).toBe('/workspace/mise.toml')
+      expect(spawn).toHaveBeenCalledTimes(3)
+      for (const [, options] of spawn.mock.calls) {
+        expect(options).toEqual({ stdout: 'pipe', stderr: 'ignore', timeout: 3000, killSignal: 'SIGKILL' })
+      }
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
   test('accepts only the verified backend, option, and owning executable', async () => {
     const result = await resolveMiseInstall({
       execPath: '/mise/installs/github-agent-facets-facets/0.36.3/facet',

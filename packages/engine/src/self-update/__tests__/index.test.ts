@@ -156,9 +156,13 @@ describe('runSelfUpdate orchestration', () => {
     update.mockRestore()
   })
 
-  test('ambiguous mise ownership emits guidance and never dispatches an updater', async () => {
+  test.each([
+    'unsupported-tool',
+    'metadata-unavailable',
+    'invalid-metadata',
+  ] as const)('ambiguous mise ownership (%s) emits text-only guidance and never dispatches an updater', async (reason) => {
     detectSpy.mockImplementation(async () => 'npm')
-    miseSpy.mockImplementation(async () => ({ kind: 'guidance', reason: 'unsupported-tool' }))
+    miseSpy.mockImplementation(async () => ({ kind: 'guidance', reason }))
     const { update } = instrumentMethod('npm')
     const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
 
@@ -174,11 +178,33 @@ describe('runSelfUpdate orchestration', () => {
     expect(events).toEqual([
       {
         kind: 'mise-guidance',
-        reason: 'unsupported-tool',
-        command: "mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+        reason,
       },
     ])
     update.mockRestore()
+  })
+
+  test.each([false, true])('up-to-date ambiguous mise install skips guidance (dryRun=%s)', async (dryRun) => {
+    detectSpy.mockImplementation(async () => 'npm')
+    miseSpy.mockImplementation(async () => ({ kind: 'guidance', reason: 'unsupported-tool' }))
+    const { update } = instrumentMethod('npm')
+    const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
+    const output: string[] = []
+    try {
+      const code = await runSelfUpdate({
+        currentVersion: '0.8.0',
+        targetVersion: '0.8.0',
+        dryRun,
+        onError: (event) => events.push(event),
+        onOutput: (line) => output.push(line),
+      })
+      expect(code).toBe(0)
+      expect(events).toEqual([])
+      expect(output.join('')).toContain('already up to date')
+      expect(update).not.toHaveBeenCalled()
+    } finally {
+      update.mockRestore()
+    }
   })
 
   test('dry-run reports the same config-preserving mise command it would execute', async () => {
@@ -202,7 +228,7 @@ describe('runSelfUpdate orchestration', () => {
 
     expect(code).toBe(0)
     expect(output.join('')).toContain(
-      "mise use --path /workspace/mise.toml 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+      "mise use --path '/workspace/mise.toml' 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
     )
   })
 })

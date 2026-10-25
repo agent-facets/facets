@@ -78,11 +78,10 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
     target = result.version
   }
 
-  if (miseGuidance !== null) {
+  if (miseGuidance !== null && opts.currentVersion !== target) {
     opts.onError?.({
       kind: 'mise-guidance',
       reason: miseGuidance.reason,
-      command: `mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@${target}'`,
     })
     return 0
   }
