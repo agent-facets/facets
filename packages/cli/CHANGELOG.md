@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.36.5
+
+### Patch Changes
+
+- [#609](https://github.com/agent-facets/facets/pull/609) [`367fa5e`](https://github.com/agent-facets/facets/commit/367fa5edcc2c337772c167bf73b4c5a13d54d394) Thanks [@JosephBouSaada](https://github.com/JosephBouSaada)! -
+
 ## 0.36.4
 
 ### Patch Changes
