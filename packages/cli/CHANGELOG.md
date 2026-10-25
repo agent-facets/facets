@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.36.3
+
+### Patch Changes
+
+- [#604](https://github.com/agent-facets/facets/pull/604) [`b75e899`](https://github.com/agent-facets/facets/commit/b75e899dfdd0672e3c339dbcbe14e3d016d05d50) Thanks [@JosephBouSaada](https://github.com/JosephBouSaada)! - Publish native CLI release archives with GitHub-verifiable build provenance before making the GitHub Release immutable.
+
 ## 0.36.2
 
 ### Patch Changes
