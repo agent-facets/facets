@@ -74,4 +74,14 @@ describe('formatSelfUpdateError', () => {
     expect(out).toContain('failed to fetch latest agent-facets version')
     expect(out).toContain('network error: timeout')
   })
+
+  test('renders mise guidance without implying an automatic config write', () => {
+    const out = formatSelfUpdateError({
+      kind: 'mise-guidance',
+      reason: 'unsupported-tool',
+      command: "mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+    })
+    expect(out).toContain('could not be safely updated automatically')
+    expect(out).toContain('mise use')
+  })
 })

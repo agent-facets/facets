@@ -1,5 +1,7 @@
 import { detectInstallMethod } from './detect.ts'
+import { createMiseMethod } from './methods/mise.ts'
 import type { SelfUpdateErrorHandler } from './methods/types.ts'
+import { resolveMiseInstall } from './mise.ts'
 import { installMethods } from './registry.ts'
 import { getLatestVersion } from './version-check.ts'
 
@@ -40,14 +42,18 @@ export interface RunSelfUpdateOptions {
  * Returns the exit code the CLI should surface to the user.
  */
 export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number> {
-  const method = await detectInstallMethod()
-  const handler = installMethods[method]
+  const detected = await detectInstallMethod()
+  const mise = detected === 'local-dev' ? { kind: 'not-mise' as const } : await resolveMiseInstall()
+  const fallbackMethod = detected === 'mise' ? installMethods.unknown : installMethods[detected]
+  const method = mise.kind === 'updatable' ? createMiseMethod(mise.install) : fallbackMethod
+  const miseGuidance = mise.kind === 'guidance' ? mise : null
+  const handler = method
 
   // Dev-mode short-circuit. The local-dev handler refuses regardless of
   // version or --dry-run — running version-check first would hit the
   // network needlessly, and the "already up to date" branch below would
   // hide the refusal message a developer expects to see.
-  if (method === 'local-dev') {
+  if (detected === 'local-dev') {
     return handler.update({
       targetVersion: opts.targetVersion ?? '',
       dryRun: opts.dryRun,
@@ -70,6 +76,15 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
       return 1
     }
     target = result.version
+  }
+
+  if (miseGuidance !== null) {
+    opts.onError?.({
+      kind: 'mise-guidance',
+      reason: miseGuidance.reason,
+      command: `mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@${target}'`,
+    })
+    return 0
   }
 
   // Dry-run path: render the plan and exit. No filesystem side effects, no

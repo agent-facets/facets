@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import * as detectModule from '../detect.ts'
 import { runSelfUpdate } from '../index.ts'
+import * as miseModule from '../mise.ts'
 import * as registryModule from '../registry.ts'
 import * as versionCheckModule from '../version-check.ts'
 
@@ -10,23 +11,29 @@ import * as versionCheckModule from '../version-check.ts'
 
 type DetectFn = typeof detectModule.detectInstallMethod
 type GetLatestFn = typeof versionCheckModule.getLatestVersion
+type ResolveMiseFn = typeof miseModule.resolveMiseInstall
 
 const detectSpy = spyOn(detectModule, 'detectInstallMethod') as unknown as Mock<DetectFn>
 const getLatestSpy = spyOn(versionCheckModule, 'getLatestVersion') as unknown as Mock<GetLatestFn>
+const miseSpy = spyOn(miseModule, 'resolveMiseInstall') as unknown as Mock<ResolveMiseFn>
 
 beforeEach(() => {
   detectSpy.mockClear()
   getLatestSpy.mockClear()
+  miseSpy.mockClear()
+  miseSpy.mockImplementation(async () => ({ kind: 'not-mise' }))
 })
 
 afterEach(() => {
   detectSpy.mockReset()
   getLatestSpy.mockReset()
+  miseSpy.mockReset()
 })
 
 afterAll(() => {
   detectSpy.mockRestore()
   getLatestSpy.mockRestore()
+  miseSpy.mockRestore()
 })
 
 /** Replace one method's `update` and `describe` with spies; returns them. */
@@ -147,5 +154,55 @@ describe('runSelfUpdate orchestration', () => {
     if (event.failure.reason !== 'http') expect.unreachable()
     expect(event.failure.status).toBe(503)
     update.mockRestore()
+  })
+
+  test('ambiguous mise ownership emits guidance and never dispatches an updater', async () => {
+    detectSpy.mockImplementation(async () => 'npm')
+    miseSpy.mockImplementation(async () => ({ kind: 'guidance', reason: 'unsupported-tool' }))
+    const { update } = instrumentMethod('npm')
+    const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
+
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      targetVersion: '0.8.0',
+      dryRun: false,
+      onError: (event) => events.push(event),
+    })
+
+    expect(code).toBe(0)
+    expect(update).toHaveBeenCalledTimes(0)
+    expect(events).toEqual([
+      {
+        kind: 'mise-guidance',
+        reason: 'unsupported-tool',
+        command: "mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+      },
+    ])
+    update.mockRestore()
+  })
+
+  test('dry-run reports the same config-preserving mise command it would execute', async () => {
+    detectSpy.mockImplementation(async () => 'unknown')
+    miseSpy.mockImplementation(async () => ({
+      kind: 'updatable',
+      install: {
+        backend: 'github:agent-facets/facets',
+        versionPrefix: 'agent-facets@',
+        configPath: '/workspace/mise.toml',
+      },
+    }))
+    const output: string[] = []
+
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      targetVersion: '0.8.0',
+      dryRun: true,
+      onOutput: (line) => output.push(line),
+    })
+
+    expect(code).toBe(0)
+    expect(output.join('')).toContain(
+      "mise use --path /workspace/mise.toml 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+    )
   })
 })
