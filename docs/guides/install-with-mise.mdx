@@ -3,7 +3,7 @@ title: Install with mise
 description: Install and manage the CLI with mise
 ---
 
-Install the `facet` CLI through [mise](https://mise.jdx.dev/getting-started.html). Install and activate mise in your shell before continuing.
+Install the `facet` CLI through [mise](https://mise.jdx.dev/getting-started.html). Use mise 2026.10.19 or newer and activate it in your shell before continuing.
 
 <Steps>
   <Step title="Install the CLI">
@@ -33,6 +33,8 @@ Install the `facet` CLI through [mise](https://mise.jdx.dev/getting-started.html
 ## Keep the CLI current
 
 Use [`facet self-update`](/cli/self-update#mise-installs) to preview and apply an update. Automatic updates for this installation method require Facet 0.36.4 or newer.
+
+If mise reports a GitHub URL containing `[version_prefix=`, upgrade mise first. mise 2026.6.14 misparses the backend options in the self-update command; the same command has been verified with mise 2026.10.19.
 
 For an older binary, update through mise first:
 
