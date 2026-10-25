@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.36.4
+
+### Patch Changes
+
+- [#607](https://github.com/agent-facets/facets/pull/607) [`274a796`](https://github.com/agent-facets/facets/commit/274a796fa3b094779e4125e6c33a7f582cb08ecb) Thanks [@JosephBouSaada](https://github.com/JosephBouSaada)! - Safely support self-updating Facet installations managed by the verified mise GitHub backend. Updates preserve the original mise configuration file and backend options; unverified or ambiguous mise installations receive manual guidance without configuration changes.
+
 ## 0.36.3
 
 ### Patch Changes
