@@ -97,9 +97,10 @@ The GitHub Actions workflow passes its scoped `GITHUB_TOKEN` as `GH_TOKEN` and
 selects `FACET_RELEASE_AUTH=workflow-token`; it never receives CircleCI's
 GitHub App credentials. The CircleCI dispatcher retains App-token minting only
 to dispatch and watch the exact workflow run ID returned by GitHub's dispatch
-API. If the App lacks workflow-dispatch permission, delivery fails before a
-release is published; grant that external permission only through the approved
-GitHub App administration process.
+API. The dispatcher explicitly forwards that freshly minted token to its GitHub
+CLI subprocess. If the App lacks workflow-dispatch permission, delivery fails
+before a release is published; grant that external permission only through the
+approved GitHub App administration process.
 
 GitHub Actions suppresses the archive-release Slack notification because it
 does not receive Slack credentials. After it watches the exact successful run,

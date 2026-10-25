@@ -9,11 +9,11 @@ async function runGh(
   executable: string,
   args: string[],
 ): Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }> {
-  const process = Bun.spawn({ cmd: [executable, ...args], stdout: 'pipe', stderr: 'pipe' })
+  const child = Bun.spawn({ cmd: [executable, ...args], env: process.env, stdout: 'pipe', stderr: 'pipe' })
   const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).arrayBuffer(),
-    new Response(process.stderr).arrayBuffer(),
+    child.exited,
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).arrayBuffer(),
   ])
   return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }
 }
