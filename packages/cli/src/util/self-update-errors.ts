@@ -49,5 +49,10 @@ export function formatSelfUpdateError(event: SelfUpdateErrorEvent): string {
       return event.line
     case 'latest-version-failure':
       return formatLatestVersionFailure(event.failure)
+    case 'mise-guidance':
+      return (
+        `mise manages this facet binary, but its installation could not be safely updated automatically (${event.reason}).\n` +
+        `  → update the facet entry in your existing mise configuration manually.\n`
+      )
   }
 }

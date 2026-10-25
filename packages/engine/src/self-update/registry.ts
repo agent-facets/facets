@@ -13,7 +13,7 @@ import { yarnMethod } from './methods/yarn.ts'
  * `methods/<kind>.ts` and adding one entry here — no changes to existing
  * methods, no changes to the orchestrator.
  */
-export const installMethods: Record<MethodKind, InstallMethod> = {
+export const installMethods: Record<Exclude<MethodKind, 'mise'>, InstallMethod> = {
   curl: curlMethod,
   npm: npmMethod,
   yarn: yarnMethod,

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, te
 import { bunMethod } from '../methods/bun.ts'
 import { curlMethod, runCurlInstaller } from '../methods/curl.ts'
 import { localDevMethod } from '../methods/local-dev.ts'
+import { createMiseMethod } from '../methods/mise.ts'
 import { npmMethod } from '../methods/npm.ts'
 import { pnpmMethod } from '../methods/pnpm.ts'
 import type { InstallMethod, SelfUpdateErrorEvent } from '../methods/types.ts'
@@ -144,6 +145,54 @@ describe.each<{ method: InstallMethod; expectedArgv: string[]; expectedDescribe:
     const code = await method.update({ targetVersion: '0.8.0', dryRun: false, onError: cb.onError })
     expect(code).toBe(1)
     expect(cb.stderr()).toContain('ENOENT')
+  })
+})
+
+describe('mise method', () => {
+  const method = createMiseMethod({
+    backend: 'github:agent-facets/facets',
+    versionPrefix: 'agent-facets@',
+    configPath: '/workspace/mise.toml',
+  })
+
+  test('preserves the verified backend, option, and exact config source', async () => {
+    mockSpawnExit(0)
+    expect(method.describe({ targetVersion: '0.8.0', dryRun: true })).toBe(
+      "mise use --path '/workspace/mise.toml' 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'",
+    )
+
+    await method.update({ targetVersion: '0.8.0', dryRun: false })
+    expect(spawnSpy.mock.calls[0]?.[0]).toEqual([
+      'mise',
+      'use',
+      '--path',
+      '/workspace/mise.toml',
+      'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0',
+    ])
+  })
+
+  test.each([
+    ['/workspace/My Project/mise.toml', "'/workspace/My Project/mise.toml'"],
+    ["/workspace/Jane's Project/mise.toml", "'/workspace/Jane'\\''s Project/mise.toml'"],
+    ['/workspace/$(touch sentinel);/mise.toml', "'/workspace/$(touch sentinel);/mise.toml'"],
+  ])('quotes the config path %s while preserving update argv', async (configPath, quotedPath) => {
+    const method = createMiseMethod({
+      backend: 'github:agent-facets/facets',
+      versionPrefix: 'agent-facets@',
+      configPath,
+    })
+    expect(method.describe({ targetVersion: '0.8.0', dryRun: true })).toBe(
+      `mise use --path ${quotedPath} 'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0'`,
+    )
+    mockSpawnExit(0)
+    await method.update({ targetVersion: '0.8.0', dryRun: false })
+    expect(spawnSpy.mock.calls[0]?.[0]).toEqual([
+      'mise',
+      'use',
+      '--path',
+      configPath,
+      'github:agent-facets/facets[version_prefix=agent-facets@]@0.8.0',
+    ])
   })
 })
 
