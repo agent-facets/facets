@@ -5,6 +5,30 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-10-25" description="Install and self-update the facet CLI with mise, plus verifiable release archives" tags={["CLI", "New Feature", "Improvement"]}>
+  ## Install with mise
+
+  You can now install and manage the `facet` CLI with
+  [mise](https://mise.jdx.dev/). See
+  [Install with mise](/guides/install-with-mise).
+
+  ```sh
+  mise use 'github:agent-facets/facets[version_prefix=agent-facets@]@latest' --pin
+  ```
+
+  Starting with `0.36.4`, [`facet self-update`](/cli/self-update#mise-installs)
+  updates mise installs in place.
+
+
+  ## Verifiable release archives
+
+  CLI archives on GitHub Releases now ship with GitHub-verifiable build
+  provenance. Each archive's SHA-256 digest is checked before the
+  release goes public, and releases are immutable once published.
+
+  Upgrade with `facet self-update` to get `agent-facets@0.36.5`.
+</Update>
+
 <Update label="2026-10-18" description="agent-facets 0.36.1 publishes CLI archives and checksums to GitHub Releases" tags={["CLI", "Improvement"]}>
   ## CLI downloads on GitHub Releases
 
