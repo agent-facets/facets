@@ -14,6 +14,9 @@ The CLI release tooling can render Homebrew formulas from verified archive
 checksums. Automated tap delivery is planned but not implemented, and will
 remain separate from this library pipeline; see `../release-cli/README.md`.
 
+Before any tap update, the CLI release pipeline validates immutable release
+assets, checksums, and provenance with a read-only gate.
+
 ## Flow
 
 ```

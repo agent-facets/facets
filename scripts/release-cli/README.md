@@ -56,6 +56,7 @@ Tag push: agent-facets@X.Y.Z
 | `upload-assets.ts`        | GitHub Actions              | Stage or publish checksum-verified release archives         |
 | `dispatch-attested-release.ts` | `dispatch-cli-release` | Dispatch and await GitHub's attested archive release workflow |
 | `homebrew-formula.ts`     | (future tap delivery) | Render a macOS formula from verified release-archive checksums |
+| `validate-homebrew-release.ts` | (future tap delivery) | Fail closed on immutable, attested release inputs before formula rendering |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate npm: wait for platforms → publish wrapper → wait for wrapper |
@@ -144,6 +145,12 @@ macOS ARM64 and portable x64 formula. It does not discover a release, call
 GitHub, or write to the tap. Automated tap delivery is not implemented yet; its
 planned workflow will verify published release assets and provenance before
 using the renderer.
+
+`validate-homebrew-release.ts` is the read-only gate before tap delivery. Its
+caller supplies the downloaded release assets and a successful provenance check.
+It rejects mutable, draft, prerelease, incomplete, duplicate, or checksum-invalid
+releases before rendering a formula. It does not create branches, modify a tap,
+or publish a release.
 
 The packaging script's `--single` and `--target` flags package only the selected
 platform/ABI using already-built binaries. `--target` requires an explicit
