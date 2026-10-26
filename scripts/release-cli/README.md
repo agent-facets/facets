@@ -57,6 +57,7 @@ Tag push: agent-facets@X.Y.Z
 | `dispatch-attested-release.ts` | `dispatch-cli-release` | Dispatch and await GitHub's attested archive release workflow |
 | `homebrew-formula.ts`     | (future tap delivery) | Render a macOS formula from verified release-archive checksums |
 | `validate-homebrew-release.ts` | (future tap delivery) | Fail closed on immutable, attested release inputs before formula rendering |
+| `plan-homebrew-tap-update.ts` | (future tap delivery) | Plan a monotonic tap update without writing remotely |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate npm: wait for platforms → publish wrapper → wait for wrapper |
@@ -151,6 +152,11 @@ caller supplies the downloaded release assets and a successful provenance check.
 It rejects mutable, draft, prerelease, incomplete, duplicate, or checksum-invalid
 releases before rendering a formula. It does not create branches, modify a tap,
 or publish a release.
+
+`plan-homebrew-tap-update.ts` compares a validated formula to read-only tap
+state. It plans only monotonic updates, reuses identical open update PRs, and
+refuses unexpected formula content. The separate apply lane re-reads state
+before remote writes and executes this plan without automatic merging.
 
 The packaging script's `--single` and `--target` flags package only the selected
 platform/ABI using already-built binaries. `--target` requires an explicit

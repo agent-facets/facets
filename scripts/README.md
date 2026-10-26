@@ -22,6 +22,7 @@ scripts/
 │   ├── dispatch-attested-release.ts # Dispatch and await GitHub's attested archive release
 │   ├── homebrew-formula.ts          # Render an official-tap formula from verified archive checksums
 │   ├── validate-homebrew-release.ts # Fail closed on verified release inputs before tap delivery
+│   ├── plan-homebrew-tap-update.ts  # Plan monotonic tap updates without remote writes
 │   ├── verify.ts               # Wait for CLI packages to be available on npm (20m deadline)
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions

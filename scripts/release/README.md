@@ -17,6 +17,9 @@ remain separate from this library pipeline; see `../release-cli/README.md`.
 Before any tap update, the CLI release pipeline validates immutable release
 assets, checksums, and provenance with a read-only gate.
 
+It then plans a monotonic formula update from read-only tap state before any
+delivery job creates or updates a pull request.
+
 ## Flow
 
 ```
