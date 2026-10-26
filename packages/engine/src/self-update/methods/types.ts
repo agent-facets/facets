@@ -10,7 +10,7 @@
 
 import type { LatestVersionResult } from '../version-check.ts'
 
-export type MethodKind = 'curl' | 'npm' | 'yarn' | 'pnpm' | 'bun' | 'mise' | 'local-dev' | 'unknown'
+export type MethodKind = 'curl' | 'npm' | 'yarn' | 'pnpm' | 'bun' | 'mise' | 'homebrew' | 'local-dev' | 'unknown'
 
 /**
  * Structured event payload for self-update error reporting.
@@ -32,6 +32,7 @@ export type SelfUpdateErrorEvent =
   | { kind: 'message'; line: string }
   | { kind: 'latest-version-failure'; failure: Extract<LatestVersionResult, { ok: false }> }
   | { kind: 'mise-guidance'; reason: 'metadata-unavailable' | 'invalid-metadata' | 'unsupported-tool' }
+  | { kind: 'homebrew-guidance'; reason: 'metadata-unavailable' | 'different-formula' }
 
 /**
  * Callback shape for self-update error reporting. Engine emits a

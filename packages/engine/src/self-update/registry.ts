@@ -1,5 +1,6 @@
 import { bunMethod } from './methods/bun.ts'
 import { curlMethod } from './methods/curl.ts'
+import { homebrewMethod } from './methods/homebrew.ts'
 import { localDevMethod } from './methods/local-dev.ts'
 import { npmMethod } from './methods/npm.ts'
 import { pnpmMethod } from './methods/pnpm.ts'
@@ -13,7 +14,7 @@ import { yarnMethod } from './methods/yarn.ts'
  * `methods/<kind>.ts` and adding one entry here — no changes to existing
  * methods, no changes to the orchestrator.
  */
-export const installMethods: Record<Exclude<MethodKind, 'mise'>, InstallMethod> = {
+export const installMethods: Record<Exclude<MethodKind, 'mise' | 'homebrew'>, InstallMethod> = {
   curl: curlMethod,
   npm: npmMethod,
   yarn: yarnMethod,
@@ -22,3 +23,5 @@ export const installMethods: Record<Exclude<MethodKind, 'mise'>, InstallMethod> 
   'local-dev': localDevMethod,
   unknown: unknownMethod,
 }
+
+export { homebrewMethod }

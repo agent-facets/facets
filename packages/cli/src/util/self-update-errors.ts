@@ -54,5 +54,10 @@ export function formatSelfUpdateError(event: SelfUpdateErrorEvent): string {
         `mise manages this facet binary, but its installation could not be safely updated automatically (${event.reason}).\n` +
         `  → update the facet entry in your existing mise configuration manually.\n`
       )
+    case 'homebrew-guidance':
+      return (
+        `Homebrew may manage this facet binary, but its owning formula could not be verified (${event.reason}).\n` +
+        `  → inspect it with \`brew which-formula "$(command -v facet)"\` before updating.\n`
+      )
   }
 }

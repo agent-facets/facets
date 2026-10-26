@@ -1,8 +1,9 @@
 import { detectInstallMethod } from './detect.ts'
+import { resolveHomebrewInstall } from './homebrew.ts'
 import { createMiseMethod } from './methods/mise.ts'
 import type { SelfUpdateErrorHandler } from './methods/types.ts'
 import { resolveMiseInstall } from './mise.ts'
-import { installMethods } from './registry.ts'
+import { homebrewMethod, installMethods } from './registry.ts'
 import { getLatestVersion } from './version-check.ts'
 
 export interface RunSelfUpdateOptions {
@@ -43,24 +44,52 @@ export interface RunSelfUpdateOptions {
  */
 export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number> {
   const detected = await detectInstallMethod()
-  const mise = detected === 'local-dev' ? { kind: 'not-mise' as const } : await resolveMiseInstall()
-  const fallbackMethod = detected === 'mise' ? installMethods.unknown : installMethods[detected]
-  const method = mise.kind === 'updatable' ? createMiseMethod(mise.install) : fallbackMethod
-  const miseGuidance = mise.kind === 'guidance' ? mise : null
-  const handler = method
 
   // Dev-mode short-circuit. The local-dev handler refuses regardless of
   // version or --dry-run — running version-check first would hit the
   // network needlessly, and the "already up to date" branch below would
   // hide the refusal message a developer expects to see.
   if (detected === 'local-dev') {
-    return handler.update({
+    return installMethods['local-dev'].update({
       targetVersion: opts.targetVersion ?? '',
       dryRun: opts.dryRun,
       onOutput: opts.onOutput,
       onError: opts.onError,
     })
   }
+
+  // Homebrew owns both version selection and binary replacement. Resolve its
+  // ownership before the npm lookup or unknown-method fallback, so an offline
+  // Homebrew user never gets prompted to run a competing installer.
+  const homebrew = await resolveHomebrewInstall()
+  if (homebrew.kind === 'guidance') {
+    opts.onError?.({ kind: 'homebrew-guidance', reason: homebrew.reason })
+    return 0
+  }
+  if (homebrew.kind === 'verified') {
+    if (opts.targetVersion !== undefined) {
+      opts.onError?.({
+        kind: 'message',
+        line: 'Homebrew cannot install an arbitrary Facet version with `facet self-update --version`.\n',
+      })
+      return 1
+    }
+    return homebrewMethod.update({
+      targetVersion: '',
+      dryRun: opts.dryRun,
+      onOutput: opts.onOutput,
+      onError: opts.onError,
+    })
+  }
+
+  const mise = await resolveMiseInstall()
+  // `homebrew` returned above. Retain the unknown fallback here so the
+  // registry remains total if a detector adds a method before its updater.
+  const fallbackMethod =
+    detected === 'mise' || detected === 'homebrew' ? installMethods.unknown : installMethods[detected]
+  const method = mise.kind === 'updatable' ? createMiseMethod(mise.install) : fallbackMethod
+  const miseGuidance = mise.kind === 'guidance' ? mise : null
+  const handler = method
 
   // Resolve the version we'd update TO. A pinned version skips the network
   // probe — we already know what to install. Otherwise, ask the registry.

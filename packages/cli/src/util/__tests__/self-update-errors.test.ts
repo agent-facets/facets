@@ -89,4 +89,14 @@ describe('formatSelfUpdateError', () => {
     expect(out).not.toContain('run:')
     expect(out).not.toContain('mise use')
   })
+
+  test.each([
+    'metadata-unavailable',
+    'different-formula',
+  ] as const)('renders Homebrew %s guidance without a suggested installer', (reason) => {
+    const out = formatSelfUpdateError({ kind: 'homebrew-guidance', reason })
+    expect(out).toContain('owning formula could not be verified')
+    expect(out).toContain('brew which-formula "$(command -v facet)"')
+    expect(out).not.toContain('curl')
+  })
 })
