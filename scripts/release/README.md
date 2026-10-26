@@ -10,6 +10,10 @@ npm readiness with its freshly minted GitHub App token, watches the exact run
 ID GitHub returns, and sends the successful-release Slack notification only
 after that run succeeds.
 
+The CLI release pipeline also renders Homebrew formulas from the verified
+archive checksums after a stable CLI release. That delivery remains separate
+from this library pipeline; see `../release-cli/README.md`.
+
 ## Flow
 
 ```
