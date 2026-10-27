@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!packages/engine/src/registry/generated"]
+    "includes": ["**", "!packages/engine/src/registry/generated", "!.bb/workflows"]
   },
   "formatter": {
     "enabled": true,
