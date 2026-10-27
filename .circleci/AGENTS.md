@@ -69,24 +69,20 @@ the jobs that run checks (`check`, `main-pipeline`) use it.
 
 | Cache         | Key                                                                                   | Paths                                                       | Defined in                            |
 |---------------|---------------------------------------------------------------------------------------|------------------------------------------------------------|---------------------------------------|
-| mise tools    | `v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}` | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
+| mise tools    | `v2-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}`                       | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
 | facets        | `v1-facet-{{ checksum "facets.lock" }}`                                                | `~/.facet/cache`                                            | `commands/setup-mise.yml`             |
 | bun deps      | `v1-deps-{{ checksum "bun.lock" }}`                                                    | `node_modules`, `~/.bun/install/cache`                     | `commands/setup-mise.yml`             |
 | mint framework| `v1-mint-{{ checksum "bun.lock" }}`                                                    | `~/.mintlify`                                               | `commands/run-check.yml`              |
 
 ### Why each key is shaped this way
 
-- **mise tools** — keyed on `MISE_ENV` because mise loads different config
-  files per env. With no `MISE_ENV` (CI jobs), mise loads `mise.toml` **and**
-  `mise.development.toml`, so the toolset includes `circleci`. With
-  `MISE_ENV=release` (the `release`, `build-cli`, `publish-platform`,
-  and `finalize-cli` jobs), mise loads **only** `mise.toml` — no `circleci`.
-  Namespacing the key by `MISE_ENV` keeps the two toolsets in separate cache
-  slots so a release job never restores (or saves) a CI-shaped cache. Both
-  toml checksums are in the key so a bump to either file invalidates it. The
-  restore happens before `mise install`, which becomes a near-instant no-op on
-  a hit. (`mise.local.toml` is gitignored and absent in CI, so it's excluded
-  from the key.)
+- **mise tools** — every pipeline installs the tools declared in `mise.toml`,
+  including `circleci`. The key keeps `MISE_ENV` so CI jobs and
+  `MISE_ENV=release` jobs (`release`, `build-cli`, `publish-platform`, and
+  `finalize-cli`) use separate cache slots. The `mise.toml` checksum makes a
+  tool bump invalidate the cache. The restore happens before `mise install`,
+  which becomes a near-instant no-op on a hit. (`mise.local.toml` is
+  gitignored and absent in CI, so it's excluded from the key.)
 - **facets** — keyed on `facets.lock`, not `facets.json`. `facets.json` can
   carry a mutable specifier (a `latest`, or a git ref); the lockfile records
   what it resolved to, so when the upstream moves, `facets.lock` changes and
