@@ -26,6 +26,7 @@ export type ValidateHomebrewReleaseResult =
   | { ok: false; code: 'provenance-unverified' }
   | { ok: false; code: 'release-assets-invalid' }
   | { ok: false; code: 'checksums-invalid' }
+  | { ok: false; code: 'invalid-version'; version: string }
 
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
@@ -91,7 +92,8 @@ export function validateHomebrewRelease(input: HomebrewReleaseInput): ValidateHo
     parsed.version,
     new TextDecoder().decode(assets.get('checksums.txt') as Uint8Array),
   )
-  return rendered.ok
-    ? { ok: true, version: parsed.version, formula: rendered.content }
+  if (rendered.ok) return { ok: true, version: parsed.version, formula: rendered.content }
+  return rendered.code === 'invalid-version'
+    ? { ok: false, code: 'invalid-version', version: rendered.version }
     : { ok: false, code: 'checksums-invalid' }
 }

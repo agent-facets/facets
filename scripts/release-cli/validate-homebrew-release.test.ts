@@ -29,6 +29,12 @@ function fixture(): HomebrewReleaseInput {
   }
 }
 
+function replaceChecksums(input: HomebrewReleaseInput, checksums: string): void {
+  const index = input.release.assets.findIndex((asset) => asset.name === 'checksums.txt')
+  if (index === -1) expect.unreachable()
+  input.release.assets[index] = { name: 'checksums.txt', bytes: new TextEncoder().encode(checksums) }
+}
+
 test('renders a formula only from a complete immutable and attested release', () => {
   const result = validateHomebrewRelease(fixture())
 
@@ -75,4 +81,53 @@ test('rejects tag mismatch, missing assets, and a bad archive checksum', () => {
   const altered = fixture()
   altered.release.assets[0] = { name: names[0] as string, bytes: new TextEncoder().encode('altered') }
   expect(validateHomebrewRelease(altered)).toEqual({ ok: false, code: 'checksums-invalid' })
+})
+
+test('preserves an invalid formula version failure', () => {
+  const input = fixture()
+  input.tag = 'agent-facets@1.0.0-beta.1'
+  input.release.tagName = input.tag
+  input.provenance = {
+    tag: input.tag,
+    sourceRef: `refs/tags/${input.tag}`,
+    workflow: 'agent-facets/facets/.github/workflows/release-cli-assets.yml',
+  }
+
+  expect(validateHomebrewRelease(input)).toEqual({
+    ok: false,
+    code: 'invalid-version',
+    version: '1.0.0-beta.1',
+  })
+})
+
+test('rejects duplicate release archives', () => {
+  const input = fixture()
+  const archive = input.release.assets[0]
+  if (archive === undefined) expect.unreachable()
+  input.release.assets.push(archive)
+
+  expect(validateHomebrewRelease(input)).toEqual({ ok: false, code: 'release-assets-invalid' })
+})
+
+test('rejects duplicate and unexpected checksum entries', () => {
+  const duplicate = fixture()
+  const duplicateArchive = duplicate.release.assets[0]
+  if (duplicateArchive === undefined) expect.unreachable()
+  const duplicateLines = names.map((name) => {
+    const asset = duplicate.release.assets.find((candidate) => candidate.name === name)
+    if (asset === undefined) expect.unreachable()
+    return `${digest(asset.bytes)}  ${name}`
+  })
+  duplicateLines.push(`${digest(duplicateArchive.bytes)}  ${duplicateArchive.name}`)
+  replaceChecksums(duplicate, `${duplicateLines.join('\n')}\n`)
+  expect(validateHomebrewRelease(duplicate)).toEqual({ ok: false, code: 'checksums-invalid' })
+
+  const unexpected = fixture()
+  const checksumAsset = unexpected.release.assets.find((asset) => asset.name === 'checksums.txt')
+  if (checksumAsset === undefined) expect.unreachable()
+  replaceChecksums(
+    unexpected,
+    `${new TextDecoder().decode(checksumAsset.bytes)}${'f'.repeat(64)}  facet-unexpected.tar.gz\n`,
+  )
+  expect(validateHomebrewRelease(unexpected)).toEqual({ ok: false, code: 'checksums-invalid' })
 })
