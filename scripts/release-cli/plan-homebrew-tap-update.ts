@@ -60,15 +60,21 @@ export function planHomebrewTapUpdate(input: PlanHomebrewTapUpdateInput): PlanHo
     }
   }
 
-  const matching = input.openUpdates.find((update) => update.version === input.formula.version)
-  if (matching && matching.content !== input.formula.content) {
-    return { ok: false, code: 'remote-drift', pullRequest: matching.number }
+  const matching = input.openUpdates.filter((update) => update.version === input.formula.version)
+  const drifted = matching.find((update) => update.content !== input.formula.content)
+  if (drifted) {
+    return { ok: false, code: 'remote-drift', pullRequest: drifted.number }
   }
   const supersede = input.openUpdates
-    .filter((update) => compareVersions(update.version, input.formula.version) === -1)
+    .filter((update) => {
+      const comparison = compareVersions(update.version, input.formula.version)
+      return comparison !== undefined && comparison < 0
+    })
     .map((update) => update.number)
 
-  return matching
-    ? { ok: true, kind: 'reuse', pullRequest: matching.number, supersede }
+  const reusable = matching[0]
+
+  return reusable
+    ? { ok: true, kind: 'reuse', pullRequest: reusable.number, supersede }
     : { ok: true, kind: 'create', branch: branchFor(input.formula.version), supersede }
 }

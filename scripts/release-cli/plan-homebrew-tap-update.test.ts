@@ -6,14 +6,15 @@ const formula = (version: string) => ({ version, content: `formula ${version}` }
 test('creates one deterministic update and supersedes lower pending versions', () => {
   expect(
     planHomebrewTapUpdate({
-      formula: formula('1.2.0'),
+      formula: formula('1.3.0'),
       defaultFormula: formula('1.0.0'),
       openUpdates: [
+        { number: 11, branch: 'homebrew/facet-1.0.0', ...formula('1.0.0') },
         { number: 12, branch: 'homebrew/facet-1.1.0', ...formula('1.1.0') },
-        { number: 13, branch: 'homebrew/facet-1.2.1', ...formula('1.2.1') },
+        { number: 13, branch: 'homebrew/facet-1.3.1', ...formula('1.3.1') },
       ],
     }),
-  ).toEqual({ ok: true, kind: 'create', branch: 'homebrew/facet-1.2.0', supersede: [12] })
+  ).toEqual({ ok: true, kind: 'create', branch: 'homebrew/facet-1.3.0', supersede: [11, 12] })
 })
 
 test('reuses an identical version PR and refuses unexpected content', () => {
@@ -33,6 +34,14 @@ test('reuses an identical version PR and refuses unexpected content', () => {
       openUpdates: [update],
     }),
   ).toEqual({ ok: false, code: 'remote-drift', pullRequest: 12 })
+
+  expect(
+    planHomebrewTapUpdate({
+      formula: formula('1.2.0'),
+      defaultFormula: formula('1.0.0'),
+      openUpdates: [update, { ...update, number: 13, content: 'drifted' }],
+    }),
+  ).toEqual({ ok: false, code: 'remote-drift', pullRequest: 13 })
 })
 
 test('does not modify an applied version and refuses downgrades or malformed versions', () => {

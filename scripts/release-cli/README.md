@@ -155,8 +155,9 @@ or publish a release.
 
 `plan-homebrew-tap-update.ts` compares a validated formula to read-only tap
 state. It plans only monotonic updates, reuses identical open update PRs, and
-refuses unexpected formula content. The separate apply lane re-reads state
-before remote writes and executes this plan without automatic merging.
+refuses unexpected formula content. Remote delivery is not implemented yet.
+Its future apply lane must re-read state before every write, execute only the
+returned plan, and leave automatic merging disabled.
 
 The packaging script's `--single` and `--target` flags package only the selected
 platform/ABI using already-built binaries. `--target` requires an explicit
