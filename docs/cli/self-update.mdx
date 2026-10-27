@@ -35,8 +35,8 @@ facet self-update --dry-run        # preview without changing anything
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Updated, already current, a completed `--dry-run`, or manual mise guidance printed. |
-| `1` | Dev-mode refusal, network error, or malformed registry data. |
+| `0` | Updated, already current, a completed `--dry-run`, or manual mise or Homebrew guidance printed. |
+| `1` | Dev-mode refusal, an unsupported Homebrew version request, network error, or malformed registry data. |
 | `2` | An unexpected error escaped command handling, or the installer exited `2`. |
 | other | Passed through from the underlying installer or package manager. |
 
@@ -50,7 +50,7 @@ A `--dry-run` names the current and target versions, the detected install method
 
 ### Install methods
 
-The update path follows how the binary was installed: the curl installer, an `npm`, `yarn`, `pnpm`, or `bun` global install, or a verified [mise install](#mise-installs).
+The update path follows how the binary was installed: the curl installer, an `npm`, `yarn`, `pnpm`, or `bun` global install, a verified [mise install](#mise-installs), or a verified [Homebrew install](#homebrew-installs).
 
 If the location cannot be classified, self-update falls back to the curl installer and warns when `facet` on your `PATH` still resolves elsewhere afterwards, so you can remove the older copy or reorder your `PATH`.
 
@@ -66,6 +66,19 @@ facet self-update
 The update preserves the existing mise configuration file and backend options, whether the installation is global, project-local, or uses a custom config path. A preview shows `mise use --path` with that config path and the target version.
 
 If mise owns the binary but its provider, options, or configuration cannot be verified, self-update prints manual guidance without changing the configuration or invoking another installer. This guidance currently exits with `0`; read the output to distinguish it from a completed update.
+
+### Homebrew installs
+
+When Homebrew verifies that it owns the running binary from `agent-facets/tap/facet`, self-update does not contact npm or replace the binary. It prints the Homebrew commands to run:
+
+```sh
+brew update
+brew upgrade agent-facets/tap/facet
+```
+
+`facet self-update --version <x.y.z>` exits with `1` for a Homebrew install because `brew upgrade` cannot request an arbitrary Facet version.
+
+If Homebrew may own the binary but the formula cannot be verified, self-update prints inspection guidance and does not fall back to another installer.
 
 ### Environment
 
@@ -96,6 +109,11 @@ If mise owns the binary but its provider, options, or configuration cannot be ve
     **Cause:** mise owns the running binary, but installation metadata is unavailable, invalid, or identifies an unsupported provider or version prefix.
 
     **Fix:** inspect `mise which facet --plugin` and your existing mise configuration. Update the Facet entry in that same file manually, preserving its provider, options, and scope. Do not replace it with an unscoped `mise use` command from an unrelated directory. See [supported mise installs](#mise-installs).
+  </Accordion>
+  <Accordion title="Homebrew could not be safely identified">
+    **Cause:** the running binary is under Homebrew's Cellar, but Facet could not verify that the official formula owns it.
+
+    **Fix:** run the `brew which-formula` command printed by Facet. It includes the exact path of the running binary, even when another `facet` appears first on `PATH`. Update the reported formula through Homebrew. Do not run another Facet installer until you know which binary you invoked.
   </Accordion>
 </AccordionGroup>
 

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import * as detectModule from '../detect.ts'
+import * as homebrewModule from '../homebrew.ts'
 import { runSelfUpdate } from '../index.ts'
 import * as miseModule from '../mise.ts'
 import * as registryModule from '../registry.ts'
@@ -12,28 +13,34 @@ import * as versionCheckModule from '../version-check.ts'
 type DetectFn = typeof detectModule.detectInstallMethod
 type GetLatestFn = typeof versionCheckModule.getLatestVersion
 type ResolveMiseFn = typeof miseModule.resolveMiseInstall
+type ResolveHomebrewFn = typeof homebrewModule.resolveHomebrewInstall
 
 const detectSpy = spyOn(detectModule, 'detectInstallMethod') as unknown as Mock<DetectFn>
 const getLatestSpy = spyOn(versionCheckModule, 'getLatestVersion') as unknown as Mock<GetLatestFn>
 const miseSpy = spyOn(miseModule, 'resolveMiseInstall') as unknown as Mock<ResolveMiseFn>
+const homebrewSpy = spyOn(homebrewModule, 'resolveHomebrewInstall') as unknown as Mock<ResolveHomebrewFn>
 
 beforeEach(() => {
   detectSpy.mockClear()
   getLatestSpy.mockClear()
   miseSpy.mockClear()
+  homebrewSpy.mockClear()
   miseSpy.mockImplementation(async () => ({ kind: 'not-mise' }))
+  homebrewSpy.mockImplementation(async () => ({ kind: 'not-homebrew' }))
 })
 
 afterEach(() => {
   detectSpy.mockReset()
   getLatestSpy.mockReset()
   miseSpy.mockReset()
+  homebrewSpy.mockReset()
 })
 
 afterAll(() => {
   detectSpy.mockRestore()
   getLatestSpy.mockRestore()
   miseSpy.mockRestore()
+  homebrewSpy.mockRestore()
 })
 
 /** Replace one method's `update` and `describe` with spies; returns them. */
@@ -88,6 +95,70 @@ describe('runSelfUpdate orchestration', () => {
     expect(update).toHaveBeenCalledTimes(0)
     update.mockRestore()
     describe.mockRestore()
+  })
+
+  test.each([
+    false,
+    true,
+  ])('verified Homebrew ownership avoids npm lookup and installers (dryRun=%s)', async (dryRun) => {
+    detectSpy.mockImplementation(async () => 'unknown')
+    homebrewSpy.mockImplementation(async () => ({ kind: 'verified', formula: 'agent-facets/tap/facet' }))
+    const unknown = instrumentMethod('unknown')
+    const events: import('../methods/types.ts').SelfUpdateStatusEvent[] = []
+
+    try {
+      const code = await runSelfUpdate({ currentVersion: '0.7.3', dryRun, onStatus: (event) => events.push(event) })
+
+      expect(code).toBe(0)
+      expect(getLatestSpy).not.toHaveBeenCalled()
+      expect(unknown.update).not.toHaveBeenCalled()
+      expect(events).toEqual([{ kind: 'homebrew-update-guidance', dryRun }])
+    } finally {
+      unknown.update.mockRestore()
+      unknown.describe.mockRestore()
+    }
+  })
+
+  test('verified Homebrew ownership rejects an explicit version without a registry lookup', async () => {
+    detectSpy.mockImplementation(async () => 'unknown')
+    homebrewSpy.mockImplementation(async () => ({ kind: 'verified', formula: 'agent-facets/tap/facet' }))
+    const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
+
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      targetVersion: '0.8.0',
+      dryRun: false,
+      onError: (event) => events.push(event),
+    })
+
+    expect(code).toBe(1)
+    expect(getLatestSpy).not.toHaveBeenCalled()
+    expect(events).toEqual([
+      {
+        kind: 'homebrew-version-unsupported',
+        requestedVersion: '0.8.0',
+      },
+    ])
+  })
+
+  test.each([
+    'metadata-unavailable',
+    'different-formula',
+  ] as const)('ambiguous Homebrew ownership (%s) prints guidance without a registry lookup', async (reason) => {
+    detectSpy.mockImplementation(async () => 'unknown')
+    const executable = '/opt/homebrew/Cellar/facet/0.7.3/bin/facet'
+    homebrewSpy.mockImplementation(async () => ({ kind: 'guidance', reason, executable }))
+    const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
+
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      dryRun: false,
+      onError: (event) => events.push(event),
+    })
+
+    expect(code).toBe(0)
+    expect(getLatestSpy).not.toHaveBeenCalled()
+    expect(events).toEqual([{ kind: 'homebrew-guidance', reason, executable }])
   })
 
   test('pinned version skips the network probe', async () => {

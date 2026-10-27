@@ -1,6 +1,6 @@
 import { runSelfUpdate } from '@agent-facets/engine'
 import type { Command } from '../commands.ts'
-import { formatSelfUpdateError } from '../util/self-update-errors.ts'
+import { formatSelfUpdateError, formatSelfUpdateStatus } from '../util/self-update-errors.ts'
 import { version as currentVersion } from '../version.ts'
 
 /**
@@ -36,6 +36,7 @@ export const selfUpdateCommand: Command = {
       targetVersion,
       dryRun,
       onOutput: (line) => process.stdout.write(line),
+      onStatus: (event) => process.stdout.write(formatSelfUpdateStatus(event)),
       onError: (event) => process.stderr.write(formatSelfUpdateError(event)),
     })
   },
