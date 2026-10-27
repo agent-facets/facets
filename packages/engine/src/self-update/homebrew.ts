@@ -7,7 +7,7 @@ const PROBE_TIMEOUT_MS = 3000
 export type HomebrewResolution =
   | { kind: 'not-homebrew' }
   | { kind: 'verified'; formula: typeof FORMULA }
-  | { kind: 'guidance'; reason: 'metadata-unavailable' | 'different-formula' }
+  | { kind: 'guidance'; reason: 'metadata-unavailable' | 'different-formula'; executable: string }
 
 export interface HomebrewDependencies {
   execPath: string
@@ -35,6 +35,10 @@ function isInside(path: string, directory: string): boolean {
   return from !== '' && !from.startsWith('..') && !isAbsolute(from)
 }
 
+function isCellarFacetBinary(path: string): boolean {
+  return /(?:^|\/)Cellar\/[^/]+\/[^/]+\/bin\/facet$/.test(pathResolve(path))
+}
+
 /**
  * Establish Homebrew ownership from Homebrew's installed formula prefix and
  * the resolved executable, rather than inferring it from a directory name.
@@ -50,18 +54,24 @@ export async function resolveHomebrewInstall(deps?: Partial<HomebrewDependencies
     run: deps?.run ?? defaultRun,
   }
 
-  const root = await d.run(['brew', '--prefix'])
-  if (root === null || root === '') return { kind: 'not-homebrew' }
-
-  const homebrewRoot = pathResolve(root)
   let runningBinary: string
   try {
     runningBinary = d.realpath(d.execPath)
   } catch {
-    return isInside(pathResolve(d.execPath), homebrewRoot)
-      ? { kind: 'guidance', reason: 'metadata-unavailable' }
+    const unresolvedBinary = pathResolve(d.execPath)
+    return isCellarFacetBinary(unresolvedBinary)
+      ? { kind: 'guidance', reason: 'metadata-unavailable', executable: unresolvedBinary }
       : { kind: 'not-homebrew' }
   }
+
+  const root = await d.run(['brew', '--prefix'])
+  if (root === null || root === '') {
+    return isCellarFacetBinary(runningBinary)
+      ? { kind: 'guidance', reason: 'metadata-unavailable', executable: runningBinary }
+      : { kind: 'not-homebrew' }
+  }
+
+  const homebrewRoot = pathResolve(root)
 
   const formulaPrefix = await d.run(['brew', '--prefix', '--installed', FORMULA])
   if (formulaPrefix !== null && formulaPrefix !== '') {
@@ -74,6 +84,12 @@ export async function resolveHomebrewInstall(deps?: Partial<HomebrewDependencies
     }
   }
 
-  if (!isInside(runningBinary, join(homebrewRoot, 'Cellar'))) return { kind: 'not-homebrew' }
-  return { kind: 'guidance', reason: formulaPrefix === null ? 'metadata-unavailable' : 'different-formula' }
+  if (!isInside(runningBinary, join(homebrewRoot, 'Cellar')) && !isCellarFacetBinary(runningBinary)) {
+    return { kind: 'not-homebrew' }
+  }
+  return {
+    kind: 'guidance',
+    reason: formulaPrefix === null ? 'metadata-unavailable' : 'different-formula',
+    executable: runningBinary,
+  }
 }

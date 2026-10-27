@@ -46,7 +46,11 @@ describe('resolveHomebrewInstall', () => {
       run: runFor({}),
     })
 
-    expect(result).toEqual({ kind: 'guidance', reason: 'different-formula' })
+    expect(result).toEqual({
+      kind: 'guidance',
+      reason: 'different-formula',
+      executable: '/opt/homebrew/Cellar/another-facet/1.0.0/bin/facet',
+    })
   })
 
   test('keeps a Cellar binary out of installer fallback when formula metadata is unavailable', async () => {
@@ -56,7 +60,11 @@ describe('resolveHomebrewInstall', () => {
       run: runFor({ prefix: null }),
     })
 
-    expect(result).toEqual({ kind: 'guidance', reason: 'metadata-unavailable' })
+    expect(result).toEqual({
+      kind: 'guidance',
+      reason: 'metadata-unavailable',
+      executable: '/opt/homebrew/Cellar/facet/0.36.6/bin/facet',
+    })
   })
 
   test('uses a custom Homebrew prefix', async () => {
@@ -81,6 +89,28 @@ describe('resolveHomebrewInstall', () => {
     expect(result).toEqual({ kind: 'not-homebrew' })
   })
 
+  test('keeps a Cellar binary on the guidance path when the root probe fails', async () => {
+    const executable = '/opt/homebrew/Cellar/facet/0.36.6/bin/facet'
+    const result = await resolveHomebrewInstall({
+      execPath: executable,
+      realpath: (path) => path,
+      run: runFor({ root: null }),
+    })
+
+    expect(result).toEqual({ kind: 'guidance', reason: 'metadata-unavailable', executable })
+  })
+
+  test('keeps a Cellar binary from another Homebrew root on the guidance path', async () => {
+    const executable = '/opt/homebrew/Cellar/facet/0.36.6/bin/facet'
+    const result = await resolveHomebrewInstall({
+      execPath: executable,
+      realpath: (path) => path,
+      run: runFor({ root: '/usr/local', prefix: null }),
+    })
+
+    expect(result).toEqual({ kind: 'guidance', reason: 'metadata-unavailable', executable })
+  })
+
   test('uses guidance when a Homebrew-shaped path cannot be resolved', async () => {
     const result = await resolveHomebrewInstall({
       execPath: '/opt/homebrew/Cellar/facet/0.36.6/bin/facet',
@@ -90,6 +120,10 @@ describe('resolveHomebrewInstall', () => {
       run: runFor({}),
     })
 
-    expect(result).toEqual({ kind: 'guidance', reason: 'metadata-unavailable' })
+    expect(result).toEqual({
+      kind: 'guidance',
+      reason: 'metadata-unavailable',
+      executable: '/opt/homebrew/Cellar/facet/0.36.6/bin/facet',
+    })
   })
 })
