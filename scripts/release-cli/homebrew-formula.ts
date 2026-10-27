@@ -73,7 +73,7 @@ ${renderArchive(version, x64Checksum, macosTargets[1])}
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/facet --version")
+    assert_equal version.to_s, shell_output("#{bin}/facet --version").strip
     assert_match "Usage:", shell_output("#{bin}/facet --help")
   end
 end

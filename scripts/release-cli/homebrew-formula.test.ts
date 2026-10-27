@@ -26,6 +26,7 @@ describe('renderHomebrewFormula', () => {
     expect(result.content).toContain(`sha256 "${arm64Digest}"`)
     expect(result.content).toContain(`sha256 "${x64Digest}"`)
     expect(result.content).toContain('bin.install "facet"')
+    expect(result.content).toContain('assert_equal version.to_s, shell_output("#{bin}/facet --version").strip')
     expect(result.content).toContain('facet --help')
   })
 
