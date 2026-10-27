@@ -29,7 +29,15 @@ describe('renderHomebrewFormula', () => {
     expect(result.content).toContain('facet --help')
   })
 
-  test.each(['latest', '0.36', '0.36.6-rc.1', 'v0.36.6'])('rejects non-stable version %s', (version) => {
+  test.each([
+    'latest',
+    '0.36',
+    '0.36.6-rc.1',
+    'v0.36.6',
+    '01.2.3',
+    '1.02.3',
+    '1.2.03',
+  ])('rejects non-stable version %s', (version) => {
     expect(renderHomebrewFormula(version, checksums(`${arm64Digest}  ${arm64}`, `${x64Digest}  ${x64}`))).toEqual({
       ok: false,
       code: 'invalid-version',

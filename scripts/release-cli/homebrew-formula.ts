@@ -14,7 +14,7 @@ export type RenderHomebrewFormulaResult =
   | { ok: false; code: 'invalid-checksums' }
 
 function isStableVersion(version: string): boolean {
-  return /^\d+\.\d+\.\d+$/.test(version)
+  return /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)
 }
 
 function releaseUrl(version: string, archive: string): string {
