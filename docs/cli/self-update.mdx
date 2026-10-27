@@ -113,7 +113,7 @@ If Homebrew may own the binary but the formula cannot be verified, self-update p
   <Accordion title="Homebrew could not be safely identified">
     **Cause:** the running binary is under Homebrew's Cellar, but Facet could not verify that the official formula owns it.
 
-    **Fix:** run `brew which-formula "$(command -v facet)"` to identify the owning formula, then update that formula through Homebrew. Do not run another Facet installer until you know which binary your shell uses.
+    **Fix:** run the `brew which-formula` command printed by Facet. It includes the exact path of the running binary, even when another `facet` appears first on `PATH`. Update the reported formula through Homebrew. Do not run another Facet installer until you know which binary you invoked.
   </Accordion>
 </AccordionGroup>
 

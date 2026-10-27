@@ -1,4 +1,4 @@
-import type { LatestVersionResult, SelfUpdateErrorEvent } from '@agent-facets/engine'
+import type { LatestVersionResult, SelfUpdateErrorEvent, SelfUpdateStatusEvent } from '@agent-facets/engine'
 
 /**
  * Format a `getLatestVersion` failure into the canonical two-line error
@@ -34,6 +34,10 @@ function describeReason(failure: Extract<LatestVersionResult, { ok: false }>): s
   }
 }
 
+function quoteShellArgument(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 /**
  * Render a `SelfUpdateErrorEvent` into a stderr line. Wired into
  * `selfUpdateCommand.run`'s `onError` callback so the CLI exhaustively
@@ -57,7 +61,19 @@ export function formatSelfUpdateError(event: SelfUpdateErrorEvent): string {
     case 'homebrew-guidance':
       return (
         `Homebrew may manage this facet binary, but its owning formula could not be verified (${event.reason}).\n` +
-        `  → inspect it with \`brew which-formula "$(command -v facet)"\` before updating.\n`
+        `  → inspect it with \`brew which-formula ${quoteShellArgument(event.executable)}\` before updating.\n`
       )
+    case 'homebrew-version-unsupported':
+      return `Homebrew cannot install the requested Facet version (${event.requestedVersion}) with \`facet self-update --version\`.\n`
+  }
+}
+
+/** Render structured self-update status data to stdout. */
+export function formatSelfUpdateStatus(event: SelfUpdateStatusEvent): string {
+  switch (event.kind) {
+    case 'homebrew-update-guidance':
+      return event.dryRun
+        ? 'Homebrew manages this facet binary.\nWould run:\n  brew update\n  brew upgrade agent-facets/tap/facet\n'
+        : 'Homebrew manages this facet binary. No update was performed.\nRun:\n  brew update\n  brew upgrade agent-facets/tap/facet\n'
   }
 }

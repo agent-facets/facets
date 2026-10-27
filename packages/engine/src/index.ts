@@ -428,6 +428,8 @@ export type {
   MethodKind,
   SelfUpdateErrorEvent,
   SelfUpdateErrorHandler,
+  SelfUpdateStatusEvent,
+  SelfUpdateStatusHandler,
   UpdateOptions,
 } from './self-update/methods/types.ts'
 export { installMethods } from './self-update/registry.ts'

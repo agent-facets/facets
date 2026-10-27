@@ -1,7 +1,7 @@
 import { detectInstallMethod } from './detect.ts'
 import { resolveHomebrewInstall } from './homebrew.ts'
 import { createMiseMethod } from './methods/mise.ts'
-import type { SelfUpdateErrorHandler } from './methods/types.ts'
+import type { SelfUpdateErrorHandler, SelfUpdateStatusHandler } from './methods/types.ts'
 import { resolveMiseInstall } from './mise.ts'
 import { homebrewMethod, installMethods } from './registry.ts'
 import { getLatestVersion } from './version-check.ts'
@@ -23,6 +23,8 @@ export interface RunSelfUpdateOptions {
    * writes to stdout; tests pass a collector or no-op.
    */
   onOutput?: (line: string) => void
+  /** Optional callback for structured normal-output events. */
+  onStatus?: SelfUpdateStatusHandler
   /**
    * Optional callback for structured error events (failed fetches,
    * dev-mode refusal, spawn failures, latest-version lookup failures).
@@ -54,6 +56,7 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
       targetVersion: opts.targetVersion ?? '',
       dryRun: opts.dryRun,
       onOutput: opts.onOutput,
+      onStatus: opts.onStatus,
       onError: opts.onError,
     })
   }
@@ -63,14 +66,14 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
   // Homebrew user never gets prompted to run a competing installer.
   const homebrew = await resolveHomebrewInstall()
   if (homebrew.kind === 'guidance') {
-    opts.onError?.({ kind: 'homebrew-guidance', reason: homebrew.reason })
+    opts.onError?.({ kind: 'homebrew-guidance', reason: homebrew.reason, executable: homebrew.executable })
     return 0
   }
   if (homebrew.kind === 'verified') {
     if (opts.targetVersion !== undefined) {
       opts.onError?.({
-        kind: 'message',
-        line: 'Homebrew cannot install an arbitrary Facet version with `facet self-update --version`.\n',
+        kind: 'homebrew-version-unsupported',
+        requestedVersion: opts.targetVersion,
       })
       return 1
     }
@@ -78,6 +81,7 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
       targetVersion: '',
       dryRun: opts.dryRun,
       onOutput: opts.onOutput,
+      onStatus: opts.onStatus,
       onError: opts.onError,
     })
   }
@@ -143,6 +147,7 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
     targetVersion: target,
     dryRun: false,
     onOutput: opts.onOutput,
+    onStatus: opts.onStatus,
     onError: opts.onError,
   })
 }

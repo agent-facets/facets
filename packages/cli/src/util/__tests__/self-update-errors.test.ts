@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatLatestVersionFailure, formatSelfUpdateError } from '../self-update-errors.ts'
+import { formatLatestVersionFailure, formatSelfUpdateError, formatSelfUpdateStatus } from '../self-update-errors.ts'
 
 describe('formatLatestVersionFailure', () => {
   test('network failure renders cause inline', () => {
@@ -94,9 +94,29 @@ describe('formatSelfUpdateError', () => {
     'metadata-unavailable',
     'different-formula',
   ] as const)('renders Homebrew %s guidance without a suggested installer', (reason) => {
-    const out = formatSelfUpdateError({ kind: 'homebrew-guidance', reason })
+    const out = formatSelfUpdateError({
+      kind: 'homebrew-guidance',
+      reason,
+      executable: "/opt/Homebrew's Cellar/facet/0.36.6/bin/facet",
+    })
     expect(out).toContain('owning formula could not be verified')
-    expect(out).toContain('brew which-formula "$(command -v facet)"')
+    expect(out).toContain("brew which-formula '/opt/Homebrew'\\''s Cellar/facet/0.36.6/bin/facet'")
     expect(out).not.toContain('curl')
+  })
+
+  test.each([
+    [false, 'No update was performed.\nRun:'],
+    [true, 'Would run:'],
+  ] as const)('renders structured Homebrew update guidance (dryRun=%s)', (dryRun, expected) => {
+    const out = formatSelfUpdateStatus({ kind: 'homebrew-update-guidance', dryRun })
+    expect(out).toContain(expected)
+    expect(out).toContain('brew update')
+    expect(out).toContain('brew upgrade agent-facets/tap/facet')
+  })
+
+  test('renders an unsupported Homebrew version request', () => {
+    const out = formatSelfUpdateError({ kind: 'homebrew-version-unsupported', requestedVersion: '0.8.0' })
+    expect(out).toContain('requested Facet version (0.8.0)')
+    expect(out).toContain('facet self-update --version')
   })
 })

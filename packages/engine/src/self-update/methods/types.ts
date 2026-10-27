@@ -32,7 +32,15 @@ export type SelfUpdateErrorEvent =
   | { kind: 'message'; line: string }
   | { kind: 'latest-version-failure'; failure: Extract<LatestVersionResult, { ok: false }> }
   | { kind: 'mise-guidance'; reason: 'metadata-unavailable' | 'invalid-metadata' | 'unsupported-tool' }
-  | { kind: 'homebrew-guidance'; reason: 'metadata-unavailable' | 'different-formula' }
+  | {
+      kind: 'homebrew-guidance'
+      reason: 'metadata-unavailable' | 'different-formula'
+      executable: string
+    }
+  | { kind: 'homebrew-version-unsupported'; requestedVersion: string }
+
+/** Structured normal-output event rendered by the CLI. */
+export type SelfUpdateStatusEvent = { kind: 'homebrew-update-guidance'; dryRun: boolean }
 
 /**
  * Callback shape for self-update error reporting. Engine emits a
@@ -40,6 +48,8 @@ export type SelfUpdateErrorEvent =
  * pass a collector to assert on the event sequence.
  */
 export type SelfUpdateErrorHandler = (event: SelfUpdateErrorEvent) => void
+
+export type SelfUpdateStatusHandler = (event: SelfUpdateStatusEvent) => void
 
 /**
  * Inputs handed to a method's `describe()` and `update()`. The orchestrator
@@ -65,6 +75,8 @@ export interface UpdateOptions {
    * is silently swallowed.
    */
   onOutput?: (line: string) => void
+  /** Optional callback for structured normal-output events. */
+  onStatus?: SelfUpdateStatusHandler
   /**
    * Optional callback for structured error events (failed fetches,
    * spawn failures, dev-mode refusals). Engine emits a discriminated

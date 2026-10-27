@@ -104,15 +104,15 @@ describe('runSelfUpdate orchestration', () => {
     detectSpy.mockImplementation(async () => 'unknown')
     homebrewSpy.mockImplementation(async () => ({ kind: 'verified', formula: 'agent-facets/tap/facet' }))
     const unknown = instrumentMethod('unknown')
-    const output: string[] = []
+    const events: import('../methods/types.ts').SelfUpdateStatusEvent[] = []
 
     try {
-      const code = await runSelfUpdate({ currentVersion: '0.7.3', dryRun, onOutput: (line) => output.push(line) })
+      const code = await runSelfUpdate({ currentVersion: '0.7.3', dryRun, onStatus: (event) => events.push(event) })
 
       expect(code).toBe(0)
       expect(getLatestSpy).not.toHaveBeenCalled()
       expect(unknown.update).not.toHaveBeenCalled()
-      expect(output.join('')).toContain('brew upgrade agent-facets/tap/facet')
+      expect(events).toEqual([{ kind: 'homebrew-update-guidance', dryRun }])
     } finally {
       unknown.update.mockRestore()
       unknown.describe.mockRestore()
@@ -135,8 +135,8 @@ describe('runSelfUpdate orchestration', () => {
     expect(getLatestSpy).not.toHaveBeenCalled()
     expect(events).toEqual([
       {
-        kind: 'message',
-        line: 'Homebrew cannot install an arbitrary Facet version with `facet self-update --version`.\n',
+        kind: 'homebrew-version-unsupported',
+        requestedVersion: '0.8.0',
       },
     ])
   })
@@ -146,7 +146,8 @@ describe('runSelfUpdate orchestration', () => {
     'different-formula',
   ] as const)('ambiguous Homebrew ownership (%s) prints guidance without a registry lookup', async (reason) => {
     detectSpy.mockImplementation(async () => 'unknown')
-    homebrewSpy.mockImplementation(async () => ({ kind: 'guidance', reason }))
+    const executable = '/opt/homebrew/Cellar/facet/0.7.3/bin/facet'
+    homebrewSpy.mockImplementation(async () => ({ kind: 'guidance', reason, executable }))
     const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
 
     const code = await runSelfUpdate({
@@ -157,7 +158,7 @@ describe('runSelfUpdate orchestration', () => {
 
     expect(code).toBe(0)
     expect(getLatestSpy).not.toHaveBeenCalled()
-    expect(events).toEqual([{ kind: 'homebrew-guidance', reason }])
+    expect(events).toEqual([{ kind: 'homebrew-guidance', reason, executable }])
   })
 
   test('pinned version skips the network probe', async () => {
