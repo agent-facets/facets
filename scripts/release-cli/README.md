@@ -116,6 +116,12 @@ a new version rather than retrying with `--clobber`. This is why
 `agent-facets@0.36.1`, which was published before asset delivery existed, cannot
 be backfilled.
 
+`homebrew-provenance.ts` is the read-only boundary for later tap delivery. It
+verifies every downloaded archive against the exact release tag and workflow,
+then mints an opaque capability bound to those archive digests.
+`validate-homebrew-release.ts` rejects raw provenance metadata and accepts only
+that capability before rendering a formula. Neither module delivers to the tap.
+
 `package-assets.ts` writes `packages/cli/dist/release-assets` and the packaging
 job persists that directory only after success. Packaging requires `tar` and `zip` on
 the build host. Each archive contains a single root-level executable (`facet`

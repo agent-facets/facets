@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { CLI_PACKAGE_NAME } from '../lib/constants'
 import { parseTag } from '../lib/tags'
 import { renderHomebrewFormula } from './homebrew-formula'
+import { isVerifiedHomebrewProvenance, type VerifiedHomebrewProvenance } from './homebrew-provenance'
 import { allTargets, releaseArchiveName, releaseAssetTargets } from './targets'
 
 export interface HomebrewReleaseInput {
@@ -13,8 +14,8 @@ export interface HomebrewReleaseInput {
     isImmutable: boolean
     assets: Array<{ name: string; bytes: Uint8Array }>
   }
-  /** Attestation identity returned by the read-only provenance verifier. */
-  provenance: { tag: string; sourceRef: string; workflow: string } | null
+  /** Opaque capability minted only after archive attestations verify. */
+  provenance: VerifiedHomebrewProvenance | null
 }
 
 export type ValidateHomebrewReleaseResult =
@@ -64,10 +65,12 @@ export function validateHomebrewRelease(input: HomebrewReleaseInput): ValidateHo
       ? { ok: false, code: 'release-state-invalid' }
       : { ok: false, code: 'release-tag-mismatch', tag: input.tag, releaseTag: input.release.tagName }
   }
+  const provenance = input.provenance
   if (
-    input.provenance?.tag !== input.tag ||
-    input.provenance.sourceRef !== `refs/tags/${input.tag}` ||
-    input.provenance.workflow !== 'agent-facets/facets/.github/workflows/release-cli-assets.yml'
+    !isVerifiedHomebrewProvenance(provenance) ||
+    provenance.tag !== input.tag ||
+    provenance.sourceRef !== `refs/tags/${input.tag}` ||
+    provenance.workflow !== 'agent-facets/facets/.github/workflows/release-cli-assets.yml'
   ) {
     return { ok: false, code: 'provenance-unverified' }
   }
@@ -82,6 +85,12 @@ export function validateHomebrewRelease(input: HomebrewReleaseInput): ValidateHo
     return { ok: false, code: 'release-assets-invalid' }
   }
   if ([...expectedNames].some((name) => !assets.has(name))) return { ok: false, code: 'release-assets-invalid' }
+  if (
+    Object.keys(provenance.archiveDigests).length !== expectedNames.size ||
+    [...expectedNames].some((name) => provenance.archiveDigests[name] !== sha256(assets.get(name) as Uint8Array))
+  ) {
+    return { ok: false, code: 'provenance-unverified' }
+  }
 
   const checksums = parseChecksums(assets.get('checksums.txt') as Uint8Array, expectedNames)
   if (!checksums || [...expectedNames].some((name) => checksums.get(name) !== sha256(assets.get(name) as Uint8Array))) {

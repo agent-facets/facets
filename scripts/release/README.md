@@ -10,6 +10,10 @@ npm readiness with its freshly minted GitHub App token, watches the exact run
 ID GitHub returns, and sends the successful-release Slack notification only
 after that run succeeds.
 
+Later Homebrew tap delivery separately re-verifies every downloaded archive and
+binds those attestation results to the formula-validation input; it is not part
+of this pipeline yet.
+
 The CLI release tooling can render Homebrew formulas from verified archive
 checksums. Automated tap delivery is planned but not implemented, and will
 remain separate from this library pipeline; see `../release-cli/README.md`.
