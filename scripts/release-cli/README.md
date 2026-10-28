@@ -55,6 +55,7 @@ Tag push: agent-facets@X.Y.Z
 | `package-assets.ts`       | GitHub Actions              | Package existing binaries into archives and checksums       |
 | `upload-assets.ts`        | GitHub Actions              | Stage or publish checksum-verified release archives         |
 | `dispatch-attested-release.ts` | `dispatch-cli-release` | Dispatch and await GitHub's attested archive release workflow |
+| `homebrew-formula.ts`     | (future tap delivery) | Render a macOS formula from verified release-archive checksums |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate npm: wait for platforms → publish wrapper → wait for wrapper |
@@ -136,6 +137,13 @@ detection. The npm package layout and its optimized variants are preserved.
 `checksums.txt` contains SHA-256 hashes of the archives in standard checksum
 format. Each invocation clears the release-assets directory before building
 and emits checksums only for that invocation's archives.
+
+`homebrew-formula.ts` is a pure renderer. It accepts an explicit stable CLI
+version and the verified `checksums.txt` content, then emits the official tap's
+macOS ARM64 and portable x64 formula. It does not discover a release, call
+GitHub, or write to the tap. Automated tap delivery is not implemented yet; its
+planned workflow will verify published release assets and provenance before
+using the renderer.
 
 The packaging script's `--single` and `--target` flags package only the selected
 platform/ABI using already-built binaries. `--target` requires an explicit
