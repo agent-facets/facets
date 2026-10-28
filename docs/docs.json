@@ -87,6 +87,7 @@
             "icon": "rocket",
             "pages": [
               "guides/setup",
+              "guides/install-with-homebrew",
               "guides/install-with-mise",
               "guides/install-facets",
               "guides/create-your-first-facet",
