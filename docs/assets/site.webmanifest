@@ -4,8 +4,8 @@
   "description": "Managed Agent Capabilities",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FFFFFF",
-  "theme_color": "#FFFFFF",
+  "background_color": "#1e2424",
+  "theme_color": "#1e2424",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",
