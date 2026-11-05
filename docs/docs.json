@@ -13,42 +13,41 @@
       "canonical": "https://docs.agentfacets.io",
       "description": "Modular, versioned bundles of skills, agents, commands, and MCP servers that extend AI coding assistants",
       "language": "en",
-      "color-scheme": "light dark",
+      "color-scheme": "dark",
       "reply-to": "support@agentfacets.io",
       "og:description": "Modular, versioned bundles of skills, agents, commands, and MCP servers that extend AI coding assistants"
     }
   },
   "appearance": {
-    "default": "system"
+    "default": "dark",
+    "strict": true
   },
   "styling": {
     "codeblocks": {
-      "theme": {
-        "dark": "github-dark",
-        "light": "github-light"
-      }
+      "theme": "github-dark"
     }
   },
   "fonts": {
-    "family": "Geist",
-    "source": "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5/files/geist-latin-wght-normal.woff2",
-    "format": "woff2"
+    "family": "DM Sans"
   },
   "icons": {
     "library": "lucide"
   },
   "colors": {
-    "primary": "#6D28D9",
-    "light": "#A78BFA",
-    "dark": "#4C1D95"
+    "primary": "#e6ff00",
+    "light": "#e6ff00",
+    "dark": "#e6ff00"
   },
   "background": {
     "color": {
-      "light": "#f4f5f9",
-      "dark": "#0a0a12"
+      "dark": "#1e2424"
     }
   },
-  "favicon": "/assets/favicon.ico",
+  "thumbnails": {
+    "appearance": "dark",
+    "surface": "neutral"
+  },
+  "favicon": "/assets/favicon.svg",
   "redirects": [
     {
       "source": "/cli/adapters/install",
