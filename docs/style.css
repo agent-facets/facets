@@ -16,9 +16,15 @@
  * uses a documented hook and degrades to Mintlify's own styling if one of
  * them moves: nothing here is load-bearing for legibility on its own except
  * `--af-on-act`, which is the one rule that must not be lost.
+ *
+ * None of it needs `!important` to win. Mintlify loads this stylesheet after
+ * its own, so a plain `.card` ties with the utility class it is fighting and
+ * takes it on order. That was measured against a local preview rather than
+ * assumed, and it is why the single `!important` block further down is worth
+ * reading as the exception it is rather than as the house style.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap");
 
 :root {
   /* Ground and ink. --af-bg matches background.color.dark in docs.json. */
@@ -40,7 +46,7 @@
   --af-r-panel: 5px;
   --af-r-control: 3px;
 
-  --af-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  --af-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
 /* The registry's own measure. Prose wider than this stops being readable
@@ -88,7 +94,7 @@ pre {
   text-transform: uppercase;
 }
 .eyebrow::before {
-  content: '';
+  content: "";
   flex: none;
   width: 7px;
   height: 7px;
@@ -113,9 +119,9 @@ pre {
 .expandable,
 .tile,
 .api-section,
-[data-search-item='dialog'],
-[data-component-part='card-image'] {
-  border-radius: var(--af-r-panel) !important;
+[data-search-item="dialog"],
+[data-component-part="card-image"] {
+  border-radius: var(--af-r-panel);
 }
 
 .method-pill,
@@ -124,15 +130,15 @@ pre {
 .tabs button,
 .code-block-copy-button,
 #topbar-cta-button,
-[data-component-name='primary-header-button'],
-[data-search-item='trigger'],
-[data-search-item='filter-trigger'],
-[data-search-item='item'],
+[data-component-name="primary-header-button"],
+[data-search-item="trigger"],
+[data-search-item="filter-trigger"],
+[data-search-item="item"],
 #assistant-entry,
 #sidebar-content li > a,
 .pagination-prev,
 .pagination-next {
-  border-radius: var(--af-r-control) !important;
+  border-radius: var(--af-r-control);
 }
 
 /* ---------- The lime fill ---------- */
@@ -142,9 +148,23 @@ pre {
    which is 1.30:1 — a button whose label is a smudge. The ground reads at
    14.00:1 instead, and is what the same button carries on the site.
    `button` and `a` are both here because the navbar's CTA is a link and the
-   feedback and assistant controls are buttons. */
+   feedback and assistant controls are buttons.
+
+   This is the one block that keeps `!important`, and the only one in the
+   file. Everywhere else the overrides win on their own: Mintlify loads this
+   stylesheet after its own, so a plain `.card` beats the utility class it
+   ties with, which is checked against a local preview rather than assumed.
+   These controls are the exception because they are the ones this docs.json
+   does not currently render — there is no navbar CTA and no assistant entry
+   to measure — so the cascade they land in is unverified, and a derived
+   foreground is the kind of thing a framework sets inline, where specificity
+   cannot reach it. The failure mode is not a corner that stays round: it is
+   white text on lime at 1.30:1. Keeping the declaration forceful costs
+   nothing while the elements are absent and is the difference between
+   readable and not if one appears. */
+/* biome-ignore-start lint/complexity/noImportantStyles: a derived foreground on a lime fill is a legibility floor, and these controls are not rendered by this docs.json, so the cascade around them cannot be verified here. */
 #topbar-cta-button,
-[data-component-name='primary-header-button'],
+[data-component-name="primary-header-button"],
 .chat-assistant-send-button,
 #feedback-form-submit,
 #code-snippet-feedback-form-submit-button,
@@ -156,12 +176,19 @@ pre {
 }
 
 /* The copy-to-clipboard confirmation and any other icon riding inside a lime
-   fill has to follow its label. */
-#topbar-cta-button svg,
-[data-component-name='primary-header-button'] svg,
+   fill has to follow its label. Split by specificity rather than written as
+   one list: an id and a class in the same selector list is a descending-
+   specificity warning, and the three are different components anyway. */
 .chat-assistant-send-button svg {
   color: var(--af-on-act) !important;
 }
+[data-component-name="primary-header-button"] svg {
+  color: var(--af-on-act) !important;
+}
+#topbar-cta-button svg {
+  color: var(--af-on-act) !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: see above. */
 
 /* ---------- Surfaces ---------- */
 
@@ -172,8 +199,8 @@ pre {
 .code-block,
 .code-block pre,
 .code-group {
-  background: var(--af-bg-elev) !important;
-  border: 1px solid var(--af-line) !important;
+  background: var(--af-bg-elev);
+  border: 1px solid var(--af-line);
 }
 
 /* Cards and callouts take the same hairline, so the page has one boundary
@@ -193,7 +220,7 @@ pre {
    topbar, and on the site a control's visible boundary is `line-interactive`
    rather than the structural hairline — a field the reader is meant to use
    should not be quieter than the rule under the header. */
-[data-search-item='trigger'],
+[data-search-item="trigger"],
 #assistant-entry {
   border-color: var(--af-line-strong);
 }
@@ -204,10 +231,10 @@ pre {
    than by a fill. The site's own header does the same, which is what makes
    the two feel like one surface when a reader crosses between them. */
 #navbar,
-[data-layout-item='topbar'] {
+[data-layout-item="topbar"] {
   border-bottom: 1px solid var(--af-line);
 }
-[data-layout-item='sidebar'] {
+[data-layout-item="sidebar"] {
   border-right: 1px solid var(--af-line);
 }
 
@@ -216,15 +243,15 @@ pre {
    left edge and the label simply goes to full ink — the same way the site
    marks the lesson you are reading. */
 #sidebar-content li[data-active] > a {
-  background: var(--af-bg-elev) !important;
+  background: var(--af-bg-elev);
   box-shadow: inset 2px 0 0 0 var(--af-act);
-  color: var(--af-ink) !important;
+  color: var(--af-ink);
 }
 
 /* The active tab in the top navigation, marked the same way the sidebar marks
    the active page: the accent as a rule, not as a fill. */
 .nav-tabs-item[data-active] {
-  color: var(--af-ink) !important;
+  color: var(--af-ink);
   box-shadow: inset 0 -2px 0 0 var(--af-act);
 }
 
