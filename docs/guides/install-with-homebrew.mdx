@@ -1,0 +1,52 @@
+---
+title: Install with Homebrew
+description: Install and update Facet with Homebrew
+---
+
+Use the official tap on macOS with Apple Silicon or Intel processors. This guide remains a draft until the tap is live and its first safe Facet release has passed installation checks.
+
+## Install
+
+```sh
+brew tap agent-facets/tap
+brew install facet
+facet --version
+```
+
+Homebrew installs Facet without requiring Node.js or Bun.
+
+## Update
+
+Update Facet through Homebrew:
+
+```sh
+brew update
+brew upgrade agent-facets/tap/facet
+```
+
+See [`facet self-update`](/cli/self-update) for its behavior.
+
+## Check the active binary
+
+Confirm that your shell uses the Homebrew installation:
+
+```sh
+command -v facet
+brew which-formula "$(command -v facet)"
+```
+
+If Homebrew reports a different formula, update that formula instead. Do not run another Facet installer until you know which binary your shell uses.
+
+## Uninstall
+
+```sh
+brew uninstall facet
+brew untap agent-facets/tap
+```
+
+Uninstalling the formula does not remove your projects, facets, adapters, or user data under `$FACET_DIR`.
+
+## See also
+
+- [Setup](/guides/setup)
+- [`facet self-update`](/cli/self-update)
