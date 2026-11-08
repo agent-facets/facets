@@ -202,3 +202,34 @@ describe('describeAdapterInstallFailure — nameless bundle verify failure', () 
     expect(described.fix).not.toContain(bundlePath)
   })
 })
+
+describe('describeAdapterInstallFailure — defineAdapter() result exports', () => {
+  test('an invalid definition names every reported field rather than a missing API', () => {
+    const described = describeAdapterInstallFailure({
+      kind: 'verify-failed',
+      specifier: 'my-adapter',
+      failure: {
+        kind: 'definition-invalid',
+        bundlePath: '/tmp/b/adapter.mjs',
+        errors: [
+          { path: 'name', message: '"name" is required', expected: 'a non-empty string', actual: 'missing' },
+          { path: 'assets.supportedScopes', message: 'must list a scope', expected: 'a list', actual: 'missing' },
+        ],
+      },
+    })
+    expect(described.what).toContain('invalid definition')
+    expect(described.detail).toContain('name: "name" is required')
+    expect(described.detail).toContain('assets.supportedScopes: must list a scope')
+    expect(described.what).not.toContain('API')
+  })
+
+  test('a malformed result envelope is reported as an export problem', () => {
+    const described = describeAdapterInstallFailure({
+      kind: 'verify-failed',
+      specifier: 'my-adapter',
+      failure: { kind: 'invalid-export', bundlePath: '/tmp/b/adapter.mjs', detail: 'missing "data"' },
+    })
+    expect(described.what).toContain('malformed defineAdapter() result')
+    expect(described.detail).toContain('missing "data"')
+  })
+})

@@ -1,4 +1,4 @@
-import type { Adapter } from '@agent-facets/adapter'
+import type { Adapter, PlanningContext } from '@agent-facets/adapter'
 import type { CurrentLockfileFacet, MaterializedAsset } from '@agent-facets/protocol'
 import type { FileTransaction } from '../../fs/index.ts'
 import type { AssetTakeoverResolver } from '../asset-takeover.ts'
@@ -38,8 +38,8 @@ export interface InstallLoopArgs {
    * each write which owned companion paths its replacement may remove.
    */
   previousOwnership: ReadonlyMap<string, PreviousOwnership>
-  /** The project this run is installing into, handed to every adapter request. */
-  projectRoot: string
+  /** The operation's planning context, handed unchanged to every adapter request. */
+  planningContext: PlanningContext
   adapters: ReadonlyArray<Adapter>
   transaction: FileTransaction
   /**
@@ -69,7 +69,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
     resolved,
     plan,
     previousOwnership,
-    projectRoot,
+    planningContext,
     adapters,
     transaction,
     resolveAssetTakeover,
@@ -113,7 +113,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       newAssets: materializedByFacet.get(facetName) ?? [],
       previousOwnership,
       companionBytes: record.companionBytes,
-      projectRoot,
+      planningContext,
       transaction,
       ...(resolveAssetTakeover ? { resolveAssetTakeover } : {}),
       onLog,

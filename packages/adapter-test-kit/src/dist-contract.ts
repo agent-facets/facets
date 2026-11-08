@@ -56,11 +56,18 @@ export async function loadDistMcpCapability(bundlePath: string): Promise<McpServ
   return capability as McpServerCapability
 }
 
-async function loadAdapter(bundlePath: string): Promise<{ name?: string; apiVersion?: string; mcpServers?: unknown }> {
+type LoadedAdapter = { name?: string; apiVersion?: string; mcpServers?: unknown }
+
+/**
+ * The adapter a bundle exports. First-party bundles default-export the
+ * `defineAdapter()` result, so the envelope is checked before its payload is
+ * read — a failed definition reaching this point means the bundle is broken.
+ */
+async function loadAdapter(bundlePath: string): Promise<LoadedAdapter> {
   const module = (await import(bundlePath)) as {
-    default?: { name?: string; apiVersion?: string; mcpServers?: unknown }
+    default?: { ok: true; data: LoadedAdapter } | { ok: false; errors: unknown[] }
   }
-  const adapter = module.default
-  if (adapter === undefined) expect.unreachable()
-  return adapter
+  const result = module.default
+  if (result === undefined || result.ok !== true) expect.unreachable()
+  return result.data
 }

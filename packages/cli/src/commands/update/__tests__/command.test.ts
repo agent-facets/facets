@@ -998,7 +998,7 @@ describe('facet update — JSON failure diagnostics', () => {
         request: {
           declarations: [
             {
-              identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+              identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
               fingerprint: `sha256:${'a'.repeat(64)}`,
               declaration: { type: 'stdio', command: 'npx', args: ['srv'] },
               claimants: [{ facet: 'alpha', authoredName: 'filesystem', disposition: { kind: 'authored' } }],

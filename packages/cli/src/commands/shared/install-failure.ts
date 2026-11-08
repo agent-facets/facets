@@ -96,8 +96,20 @@ function mcpCapabilityFix(
   command: InstallCommandName,
 ): string {
   const state = describeDiskState(rollback)
-  if (failure.code !== 'conflict') {
-    return `${state}; repair ${failure.path}, then re-run 'facet ${command}'`
+  switch (failure.code) {
+    case 'io-failed':
+    case 'parse-failed':
+    case 'validation-failed':
+      return `${state}; repair ${failure.path}, then re-run 'facet ${command}'`
+    // Neither names a document the user can repair: both mean the selected
+    // adapter cannot plan this request, so the remedy is a compatible adapter.
+    case 'unsupported-scope':
+    case 'invalid-target':
+      return `${state}; select an adapter that supports this operation, then re-run 'facet ${command}'`
+    case 'invalid-document':
+      return `${state}; the adapter is faulty — reinstall or update it, then re-run 'facet ${command}'`
+    case 'conflict':
+      break
   }
   switch (failure.reason) {
     case 'interpolation':

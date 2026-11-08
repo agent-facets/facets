@@ -12,7 +12,7 @@ import {
 const REQUEST: McpConsentRequest = {
   declarations: [
     {
-      identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
       fingerprint: `sha256:${'a'.repeat(64)}`,
       declaration: { type: 'stdio', command: 'npx', args: ['-y', 'srv'], env: { TOKEN_NAME: 'A' } },
       claimants: [
@@ -25,7 +25,7 @@ const REQUEST: McpConsentRequest = {
   takeovers: [
     {
       adapter: 'claude-code',
-      identity: { kind: 'mcp-server', effectiveName: 'docs' },
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'docs' },
       existing: 'divergent',
       declaration: { type: 'http', url: 'https://mcp.example.com/mcp' },
     },

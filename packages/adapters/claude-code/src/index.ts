@@ -1,10 +1,9 @@
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   type AssetCapability,
   type AssetFileTarget,
-  type AssetRequestContext,
   defineAdapter,
+  type PlanningContext,
   planSingleFileInstall,
   planSingleFileRemoval,
   planSkillBundleInstall,
@@ -20,56 +19,58 @@ const ClaudeCodeMetadataSchema = type({
   'permissions?': type.Record('string', 'boolean'),
 })
 
+/** The scopes this adapter serves. User scope arrives with its native layout. */
+const SUPPORTED_SCOPES = ['project'] as const
+
 /**
- * Claude Code's conventional layout:
+ * Claude Code's conventional project layout:
  *
- *   user scope    → ~/.claude
  *   project scope → <projectRoot>/.claude
  *
  *   skill   → skills/<name>/SKILL.md (+ companions below skills/<name>/)
  *   agent   → agents/<name>.md
  *   command → commands/<name>.md
  *
- * The project root comes from the request, never from the process working
- * directory: the caller may be installing into a tree it is not sitting in,
- * and deriving it locally would silently materialize assets somewhere else.
+ * The project root comes from the request's planning context, never from the
+ * process working directory: the caller may be installing into a tree it is
+ * not sitting in, and deriving it locally would silently materialize assets
+ * somewhere else.
  *
- * `system` scope is unsupported; returns `null` so callers get a structured
+ * Any other target returns `null`, so callers get a structured
  * `unsupported-scope` failure.
  */
-function baseDirFor(context: AssetRequestContext): string | null {
-  switch (context.scope) {
-    case 'user': {
-      const home = process.env.HOME ?? homedir()
-      return join(home, '.claude')
-    }
-    case 'project':
-      return join(context.projectRoot, '.claude')
-    case 'system':
-      return null
-  }
+function baseDirFor(context: PlanningContext): string | null {
+  return context.target.scope === 'project' ? join(context.target.projectRoot, '.claude') : null
+}
+
+function unsupportedScope(context: PlanningContext) {
+  return {
+    ok: false,
+    failure: { code: 'unsupported-scope', scope: context.target.scope, supportedScopes: SUPPORTED_SCOPES },
+  } as const
 }
 
 /**
- * The base directory doubles as the mutation boundary: everything this adapter
- * plans lives strictly inside its own tree, and the tree itself is never
- * created or removed by an install.
+ * The base directory doubles as the mutation boundary and the disclosed
+ * storage root: everything this adapter plans lives strictly inside its own
+ * tree, and the tree itself is never created or removed by an install.
  */
 function fileTarget(baseDir: string, directory: string, name: string): AssetFileTarget {
-  return { file: join(baseDir, directory, `${name}.md`), boundary: baseDir }
+  return { file: join(baseDir, directory, `${name}.md`), boundary: baseDir, storageRoot: baseDir }
 }
 
 function skillTarget(baseDir: string, name: string): SkillBundleTarget {
   const root = join(baseDir, 'skills', name)
-  return { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir }
+  return { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir, storageRoot: baseDir }
 }
 
 const assets: AssetCapability = {
+  supportedScopes: SUPPORTED_SCOPES,
+  locationEnvironment: [],
+
   async planInstall(request) {
-    const baseDir = baseDirFor(request)
-    if (baseDir === null) {
-      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
-    }
+    const baseDir = baseDirFor(request.context)
+    if (baseDir === null) return unsupportedScope(request.context)
     const metadata = request.metadata as Record<string, unknown>
     switch (request.assetType) {
       case 'skill':
@@ -87,10 +88,8 @@ const assets: AssetCapability = {
   },
 
   async planRemoval(request) {
-    const baseDir = baseDirFor(request)
-    if (baseDir === null) {
-      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
-    }
+    const baseDir = baseDirFor(request.context)
+    if (baseDir === null) return unsupportedScope(request.context)
     switch (request.assetType) {
       case 'skill':
         return planSkillBundleRemoval(skillTarget(baseDir, request.name), request.ownedCompanionPaths)

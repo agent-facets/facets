@@ -2,9 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { ADAPTER_API_VERSION, type AssetCapability } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, type AssetCapability, type PlanningContext } from '@agent-facets/adapter'
 import { commitPlannedAction } from '@agent-facets/adapter-test-kit'
-import adapter from '../index.ts'
+import definition from '../index.ts'
+
+/** The adapter the package default-exports, once its definition result is checked. */
+const adapter = (() => {
+  if (!definition.ok) throw new Error('the adapter definition must be valid')
+  return definition.data
+})()
 
 /**
  * The adapter plans; it never writes. Every test here commits the plan itself,
@@ -48,6 +54,15 @@ async function install(request: Parameters<typeof assets.planInstall>[0]): Promi
   return result.plan.primaryPath
 }
 
+/** A project planning context, with a home that must never be consulted for project placement. */
+function projectContext(projectRoot: string): PlanningContext {
+  return {
+    target: { scope: 'project', projectRoot },
+    homeDirectory: '/home/unused',
+    environment: {},
+  }
+}
+
 const read = (path: string): string => readFileSync(path, 'utf8')
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 
@@ -62,8 +77,7 @@ describe('project layout', () => {
   test('resolves project scope from the request, not the process directory', async () => {
     const primaryPath = await install({
       assetType: 'agent',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'reviewer',
       content: '# reviewer\n',
       metadata: {},
@@ -76,8 +90,7 @@ describe('project layout', () => {
   test('places a command under the project tree', async () => {
     const primaryPath = await install({
       assetType: 'command',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'review-pr',
       content: '# review\n',
       metadata: {},
@@ -88,8 +101,7 @@ describe('project layout', () => {
   test('places a skill bundle under the project tree', async () => {
     const primaryPath = await install({
       assetType: 'skill',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'planning',
       content: '# planning\n',
       metadata: {},
@@ -101,31 +113,35 @@ describe('project layout', () => {
     expect(read(join(projectRoot, '.opencode', 'skills', 'planning', 'references', 'api.md'))).toBe('api\n')
   })
 
-  test('user scope lands under the home directory, not the project', async () => {
-    const primaryPath = await install({
+  test('user scope is refused until its native layout is established', async () => {
+    // User placement needs the tool's own override rules and verified native
+    // layout; until those exist this adapter declares project scope only, and
+    // the SDK refuses a user request before the planner runs or anything is read.
+    const result = await assets.planInstall({
       assetType: 'agent',
-      projectRoot,
-      scope: 'user',
+      context: { target: { scope: 'user' }, homeDirectory: home, environment: {} },
       name: 'reviewer',
       content: '# reviewer\n',
       metadata: {},
     })
 
-    expect(primaryPath).toBe(join(home, '.config', 'opencode', 'agents', 'reviewer.md'))
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'user', supportedScopes: ['project'] })
+    expect(assets.supportedScopes).toEqual(['project'])
   })
 
   test('system scope is refused with a structured failure', async () => {
     const result = await assets.planInstall({
       assetType: 'agent',
-      projectRoot,
-      scope: 'system',
+      // biome-ignore lint/suspicious/noExplicitAny: system scope is unrepresentable in the type, as intended
+      context: { target: { scope: 'system' }, homeDirectory: home, environment: {} } as any,
       name: 'reviewer',
       content: '',
       metadata: {},
     })
 
     if (result.ok) expect.unreachable()
-    expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'system' })
+    expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'system', supportedScopes: ['project'] })
   })
 })
 
@@ -133,8 +149,7 @@ describe('planning', () => {
   test('metadata is rendered as YAML front matter', async () => {
     const primaryPath = await install({
       assetType: 'agent',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'reviewer',
       content: '# body\n',
       metadata: { name: 'reviewer', tools: { grep: true } },
@@ -149,8 +164,7 @@ describe('planning', () => {
   test('re-planning an unchanged asset produces no mutation at all', async () => {
     const request = {
       assetType: 'agent',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'reviewer',
       content: '# body\n',
       metadata: { name: 'reviewer' },
@@ -171,8 +185,7 @@ describe('planning', () => {
 
     const result = await assets.planInstall({
       assetType: 'agent',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'reviewer',
       content: '# body\n',
       metadata: {},
@@ -189,8 +202,7 @@ describe('planning', () => {
   test('planning writes nothing', async () => {
     await assets.planInstall({
       assetType: 'skill',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'planning',
       content: '# planning\n',
       metadata: {},
@@ -206,8 +218,7 @@ describe('removal', () => {
   test('removes a skill primary and exactly the owned companions', async () => {
     await install({
       assetType: 'skill',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'planning',
       content: '# planning\n',
       metadata: {},
@@ -219,8 +230,7 @@ describe('removal', () => {
 
     const result = await assets.planRemoval({
       assetType: 'skill',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'planning',
       ownedCompanionPaths: ['notes.md'],
     })
@@ -237,8 +247,7 @@ describe('removal', () => {
   test('removing an absent asset is reported as absence, not failure', async () => {
     const result = await assets.planRemoval({
       assetType: 'command',
-      projectRoot,
-      scope: 'project',
+      context: projectContext(projectRoot),
       name: 'never-installed',
     })
 

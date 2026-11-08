@@ -117,7 +117,7 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
         const restoreGuards = forbidExecutionAndNetwork()
         try {
           const planned = await options.capability.plan({
-            projectRoot: root,
+            context: { target: { scope: 'project', projectRoot: root }, homeDirectory: home, environment: {} },
             desired: matrixCase.desired,
             previouslyOwnedNames: matrixCase.previouslyOwnedNames,
           })

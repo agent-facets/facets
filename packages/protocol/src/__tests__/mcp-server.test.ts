@@ -10,6 +10,7 @@ import {
   MCP_SERVER_FINGERPRINT_ENCODING,
   type McpServerDeclaration,
   McpServerDeclarationSchema,
+  mcpServerKey,
   type PlanServerMaterializationResult,
   planLockedServerInventory,
   planServerMaterialization,
@@ -70,6 +71,15 @@ describe('McpServerDeclarationSchema — rejected declarations', () => {
     for (const member of ['headers', 'cwd', 'shell']) {
       expect(errorsFor({ type: 'stdio', command: 'x', [member]: {} }).summary).toContain(member)
     }
+  })
+
+  test('installation scope is not an authored declaration member', () => {
+    for (const scope of ['user', 'project']) {
+      expect(accepts({ type: 'http', url: 'https://docs.example/mcp', scope })).toBe(false)
+      expect(accepts({ type: 'stdio', command: 'srv', scope })).toBe(false)
+    }
+    // The same declaration without it serves either scope.
+    expect(accepts({ type: 'http', url: 'https://docs.example/mcp' })).toBe(true)
   })
 
   test('relative, file, and websocket URLs', () => {
@@ -538,7 +548,7 @@ describe('planLockedServerInventory', () => {
     if (!result.ok) expect.unreachable()
     expect(result.configurations).toEqual([
       {
-        identity: { kind: 'mcp-server', effectiveName: 'fs' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'fs' },
         key: 'mcp-server\u0000fs',
         fingerprint: X,
         claimants: [
@@ -776,12 +786,96 @@ describe('planLockedServerInventory agrees with planServerMaterialization', () =
   }
 
   for (const [name, contributions] of Object.entries(fixtures)) {
-    test(name, () => {
-      const expected = withoutDeclarations(planServerMaterialization(contributions))
-      for (const order of permutations(contributions)) {
-        expect(withoutDeclarations(planServerMaterialization(order))).toEqual(expected)
-        expect<unknown>(planLockedServerInventory(locked(order))).toEqual(expected)
-      }
+    for (const scope of ['project', 'user'] as const) {
+      test(`${name} (${scope})`, () => {
+        const expected = withoutDeclarations(planServerMaterialization(contributions, scope))
+        for (const order of permutations(contributions)) {
+          expect(withoutDeclarations(planServerMaterialization(order, scope))).toEqual(expected)
+          expect<unknown>(planLockedServerInventory(locked(order), scope)).toEqual(expected)
+        }
+      })
+    }
+
+    test(`${name}: scope changes identities and keys, and nothing else`, () => {
+      const project = planServerMaterialization(contributions, 'project')
+      const user = planServerMaterialization(contributions, 'user')
+      expect(scopeNeutral(user)).toEqual(scopeNeutral(project))
+      // A failed plan selects no configuration in either scope.
+      const scopes = (result: PlanServerMaterializationResult) =>
+        result.ok ? result.configurations.map((configuration) => configuration.identity.scope) : []
+      expect(scopes(user).every((scope) => scope === 'user')).toBe(true)
+      expect(scopes(project).every((scope) => scope === 'project')).toBe(true)
+      expect(scopes(user)).toHaveLength(scopes(project).length)
     })
   }
+
+  /** A result with the scope component of every identity and key removed. */
+  function scopeNeutral(result: PlanServerMaterializationResult): unknown {
+    if (!result.ok) return result
+    return {
+      ...result,
+      configurations: result.configurations.map(({ identity: { scope: _scope, ...identity }, key: _key, ...rest }) => ({
+        ...rest,
+        identity,
+      })),
+    }
+  }
+})
+
+// --- Installation scope in server identities ---
+
+describe('scoped server identities', () => {
+  const declaration: McpServerDeclaration = { type: 'http', url: 'https://docs.example/mcp' }
+  const X = computeMcpServerFingerprint(declaration)
+
+  test('an omitted scope is project scope, with the original key spelling', () => {
+    const omitted = planServerMaterialization([{ facet: 'a', servers: [{ name: 'docs', declaration }] }])
+    const project = planServerMaterialization([{ facet: 'a', servers: [{ name: 'docs', declaration }] }], 'project')
+    if (!omitted.ok) expect.unreachable()
+    expect<unknown>(omitted).toEqual(project)
+    expect(omitted.configurations[0]?.identity).toEqual({ kind: 'mcp-server', scope: 'project', effectiveName: 'docs' })
+    expect(omitted.configurations[0]?.key).toBe('mcp-server\u0000docs')
+    expect(mcpServerKey('docs')).toBe('mcp-server\u0000docs')
+    expect(mcpServerKey('docs', 'project')).toBe('mcp-server\u0000docs')
+  })
+
+  test('equal declarations have scoped identities and unchanged fingerprints', () => {
+    const contributions: ServerContribution[] = [{ facet: 'a', servers: [{ name: 'docs', declaration }] }]
+    const project = planServerMaterialization(contributions, 'project')
+    const user = planServerMaterialization(contributions, 'user')
+    if (!project.ok || !user.ok) expect.unreachable()
+
+    expect(user.configurations[0]?.identity).toEqual({ kind: 'mcp-server', scope: 'user', effectiveName: 'docs' })
+    expect(user.configurations[0]?.key).not.toBe(project.configurations[0]?.key)
+    expect(user.configurations[0]?.fingerprint).toBe(X)
+    expect(project.configurations[0]?.fingerprint).toBe(X)
+    expect(user.planned).toEqual(project.planned)
+  })
+
+  test('a user key can never address a project identity', () => {
+    for (const name of ['docs', 'mcp-server', 'project', 'user']) {
+      expect(mcpServerKey(name, 'user')).not.toBe(mcpServerKey(name, 'project'))
+    }
+    expect(mcpServerKey('docs', 'user')).toBe('user\u0000mcp-server\u0000docs')
+  })
+
+  test('the fingerprint-only planner scopes identities the same way', () => {
+    const result = planLockedServerInventory([{ facet: 'a', servers: [{ name: 'docs', fingerprint: X }] }], 'user')
+    if (!result.ok) expect.unreachable()
+    expect(result.configurations[0]?.identity).toEqual({ kind: 'mcp-server', scope: 'user', effectiveName: 'docs' })
+    expect(result.configurations[0]?.key).toBe(mcpServerKey('docs', 'user'))
+  })
+
+  test('within the user scope, differing declarations still collide', () => {
+    const result = planServerMaterialization(
+      [
+        { facet: 'a', servers: [{ name: 'docs', declaration }] },
+        { facet: 'b', servers: [{ name: 'docs', declaration: { type: 'http', url: 'https://other.example/mcp' } }] },
+      ],
+      'user',
+    )
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'collision') expect.unreachable()
+    expect(result.groups[0]?.members.map((member) => member.facet)).toEqual(['a', 'b'])
+  })
 })

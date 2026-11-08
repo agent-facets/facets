@@ -23,7 +23,8 @@ export { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from './api-ve
 export type { AssetFileTarget, ContainedRelativePathResult } from './asset-fs.ts'
 export {
   assembleAssetContent,
-  assertSafeAssetName,
+  checkSafeAssetName,
+  checkStorageRoot,
   encodeText,
   errorMessage,
   isStrictlyInside,
@@ -60,6 +61,15 @@ export type {
   TextDocumentEdit,
 } from './mcp-text-plan.ts'
 export { findInterpolationConflict, prepareMcpTextPlan, readTextOrAbsent } from './mcp-text-plan.ts'
+export type {
+  CapabilityDeclarations,
+  CheckPlanningContextResult,
+  InstallationScope,
+  InstallationTarget,
+  PlanningContext,
+  PlanningContextFailure,
+} from './planning-context.ts'
+export { checkPlanningContext, isAbsoluteLocation } from './planning-context.ts'
 export type { SkillBundleContent, SkillBundleTarget } from './skill-bundle.ts'
 export { planSkillBundleInstall, planSkillBundleRemoval } from './skill-bundle.ts'
 export { terminalCommandLine, terminalEnvironmentAssignment, terminalLiteral } from './terminal.ts'
@@ -72,7 +82,7 @@ export type {
   AssetInstallPlan,
   AssetOccupancy,
   AssetRemovalPlan,
-  AssetRequestContext,
+  AssetRequestBase,
   AssetType,
   CompanionMap,
   MutateAction,

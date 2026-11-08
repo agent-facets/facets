@@ -1,6 +1,7 @@
 import type { AssetType, FileMutationAction, FileState, Scope, Validated, ValidationError } from '@agent-facets/common'
 import type { AdapterApiVersion } from './api-version.ts'
 import type { McpServerCapability } from './mcp-servers.ts'
+import type { CapabilityDeclarations, PlanningContext, PlanningContextFailure } from './planning-context.ts'
 
 /**
  * Opaque record type for adapter-specific asset metadata.
@@ -27,17 +28,14 @@ export type CompanionMap = Record<string, Uint8Array>
 export type MutateAction = Extract<FileMutationAction, { kind: 'mutate' }>
 
 /**
- * Where an adapter is allowed to place an asset.
+ * What every asset request carries besides its content: the explicit target
+ * and the location inputs to resolve it with.
  *
- * `projectRoot` is supplied on every request regardless of scope, and is the
- * ONLY definition of "this project" an adapter may use. An adapter that
- * derived it from the process working directory would resolve project-scoped
- * assets against a different tree than the one the caller is installing into —
- * silently, and only for callers that are not a shell sitting in the project.
+ * The context is the ONLY definition of "this project" or "this user" an
+ * adapter may use. See {@link PlanningContext}.
  */
-export interface AssetRequestContext {
-  readonly projectRoot: string
-  readonly scope: Scope
+export interface AssetRequestBase {
+  readonly context: PlanningContext
 }
 
 /**
@@ -54,7 +52,7 @@ export interface AssetRequestContext {
  * ownership data arrives on every request, and the supplied set is the
  * complete extent of what may be removed.
  */
-export type PlanAssetInstallRequest = AssetRequestContext &
+export type PlanAssetInstallRequest = AssetRequestBase &
   (
     | {
         readonly assetType: 'skill'
@@ -72,7 +70,7 @@ export type PlanAssetInstallRequest = AssetRequestContext &
   )
 
 /** Removal planning request, tagged by asset type. */
-export type PlanAssetRemovalRequest = AssetRequestContext &
+export type PlanAssetRemovalRequest = AssetRequestBase &
   (
     | {
         readonly assetType: 'skill'
@@ -101,6 +99,14 @@ export type AssetOccupancy = 'absent' | 'equivalent' | 'divergent'
  * outcome can never contradict the work it claims. An adapter that cannot
  * *prove* equivalence reports `divergent`; guessing would silently keep
  * content that differs from what the user approved.
+ *
+ * Every arm discloses `storageRoot`: the absolute root this adapter resolved
+ * for the request's target, location inputs, and asset type. It is the same
+ * for every asset of that type regardless of name, every planned change and
+ * authorized directory lies at or below it, and an `equivalent` plan still
+ * names it — a plan that changes nothing must still say where it looked, or a
+ * caller could not tell that the location moved. Disclosure confers no
+ * ownership of anything below it.
  */
 export type AssetInstallPlan =
   | {
@@ -108,11 +114,13 @@ export type AssetInstallPlan =
       readonly action: { readonly kind: 'unchanged' }
       /** Absolute path of the primary file — used for verbose reporting. */
       readonly primaryPath: string
+      readonly storageRoot: string
     }
   | {
       readonly occupancy: 'absent' | 'divergent'
       readonly action: MutateAction
       readonly primaryPath: string
+      readonly storageRoot: string
     }
 
 /**
@@ -120,11 +128,17 @@ export type AssetInstallPlan =
  *
  * `absent` is not a failure: removing something already gone is success, and
  * a plan that expressed it as an empty batch would be indistinguishable from
- * an adapter that forgot to plan anything.
+ * an adapter that forgot to plan anything. Both arms disclose `storageRoot`
+ * exactly as {@link AssetInstallPlan} does.
  */
 export type AssetRemovalPlan =
-  | { readonly kind: 'absent'; readonly primaryPath: string }
-  | { readonly kind: 'remove'; readonly action: MutateAction; readonly primaryPath: string }
+  | { readonly kind: 'absent'; readonly primaryPath: string; readonly storageRoot: string }
+  | {
+      readonly kind: 'remove'
+      readonly action: MutateAction
+      readonly primaryPath: string
+      readonly storageRoot: string
+    }
 
 /**
  * Structured failure data for adapter planning.
@@ -141,8 +155,23 @@ export type AdapterPlanFailure =
    * rejected without reading anything.
    */
   | { readonly code: 'invalid-companion-path'; readonly path: string; readonly reason: string }
-  /** The adapter does not support the requested scope. */
-  | { readonly code: 'unsupported-scope'; readonly scope: Scope }
+  /**
+   * The planning context names an unsupported scope or is malformed. Detected
+   * before any filesystem access.
+   */
+  | PlanningContextFailure
+  /** The asset name is not safe to join onto a filesystem path. Detected before any filesystem access. */
+  | { readonly code: 'invalid-asset-name'; readonly name: string; readonly reason: string }
+  /**
+   * A planned path or authorized directory does not lie below the storage
+   * root the plan would disclose, so the disclosure would be false.
+   */
+  | {
+      readonly code: 'invalid-storage-root'
+      readonly storageRoot: string
+      readonly path: string
+      readonly reason: string
+    }
   /** A file could not be read while establishing the current state. */
   | { readonly code: 'io-failed'; readonly path: string; readonly message: string }
   /**
@@ -174,8 +203,13 @@ export type PlanAssetRemovalResult =
  * endpoints, and owns rollback. An adapter is never asked to undo its own
  * work, so undo fidelity no longer depends on adapter code being correct
  * twice — or on a semantic inverse reproducing formatting it never saw.
+ *
+ * The declarations state which installation scopes the capability serves and
+ * which environment variables it reads to resolve locations. A caller checks
+ * them before it plans, and `defineAdapter` refuses a request outside them
+ * before the planner is ever called.
  */
-export interface AssetCapability {
+export interface AssetCapability extends CapabilityDeclarations {
   planInstall(request: PlanAssetInstallRequest): Promise<PlanAssetInstallResult>
   planRemoval(request: PlanAssetRemovalRequest): Promise<PlanAssetRemovalResult>
 }
@@ -206,7 +240,7 @@ export interface Adapter {
 
   /**
    * Whether this adapter can reconcile MCP servers into its tool's native
-   * project configuration, and if so, how.
+   * project or user configuration, and if so, how.
    *
    * `false` is an explicit, unambiguous "this tool has no MCP configuration I
    * can write" — not "not implemented yet" — and the CLI reports it as such

@@ -54,7 +54,8 @@ function addClaim(index: Map<string, PreviousMcpOwnership>, facet: string, claim
   const existing = index.get(key)
   if (existing === undefined) {
     index.set(key, {
-      identity: { kind: 'mcp-server', effectiveName },
+      // A project receipt records project-scoped identities only.
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName },
       key,
       effectiveName,
       facets: [facet],
