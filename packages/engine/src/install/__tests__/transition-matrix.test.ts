@@ -17,6 +17,7 @@ import { adapterKey } from '@agent-facets/protocol'
 import { FileTransaction } from '../../fs/index.ts'
 import type { PreviousOwnership } from '../commit/ownership.ts'
 import { deleteObsoleteAssets, materialize } from '../materialize.ts'
+import { captureProjectPlanningContext } from '../planning-context.ts'
 import { createTestAdapter, testAdapterSkillPath } from './helpers/test-adapter.ts'
 
 /**
@@ -31,6 +32,11 @@ import { createTestAdapter, testAdapterSkillPath } from './helpers/test-adapter.
  */
 
 let projectRoot: string
+
+/** The planning context an install of `projectRoot` captures, with no ambient location input. */
+function projectPlanningContext() {
+  return captureProjectPlanningContext(projectRoot, [], { environment: {}, home: '/home/unused' })
+}
 
 beforeEach(() => {
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-transitions-')))
@@ -75,7 +81,7 @@ async function installSkill(options: {
   return materialize({
     facetName: 'demo',
     manifest: manifestWith({ planning: { prompt: options.prompt, description: 'plan things' } }),
-    projectRoot,
+    planningContext: projectPlanningContext(),
     adapters: [createTestAdapter(adapterName)],
     newAssets: [skillAsset('planning')],
     previousOwnership: ownership(
@@ -167,7 +173,7 @@ describe('a skill bundle is one batch', () => {
 
     const cleanup = new FileTransaction()
     const deleted = await deleteObsoleteAssets({
-      projectRoot,
+      planningContext: projectPlanningContext(),
       adapters: [createTestAdapter('demo-tool')],
       obsolete: [
         {
@@ -315,7 +321,7 @@ describe('failing plans', () => {
     const result = await materialize({
       facetName: 'demo',
       manifest: manifestWith({ planning: { prompt: '# body\n' } }),
-      projectRoot,
+      planningContext: projectPlanningContext(),
       adapters: [createTestAdapter('metadata-only', { assets: false })],
       newAssets: [skillAsset('planning')],
       previousOwnership: ownership([]),

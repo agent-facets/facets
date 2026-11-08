@@ -22,7 +22,7 @@ function validAdapterModule(name: string): string {
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: {} }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }
 `
 }
@@ -63,7 +63,7 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
   name: 'future-adapter',
   apiVersion: '9.9',
   buildAssetMetadata: () => ({ ok: true, data: {} }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }`,
       // Would verify successfully if the (forbidden) fallback ran.
       'src/index.ts': validAdapterModule('future-adapter'),
@@ -90,7 +90,7 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
       'dist/index.mjs': `export default {
   name: 'legacy-adapter',
   buildAssetMetadata: () => ({ ok: true, data: {} }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }`,
       'src/index.ts': validAdapterModule('legacy-adapter'),
     })
@@ -117,7 +117,7 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
   name: 'future-adapter',
   apiVersion: '9.9',
   buildAssetMetadata: () => ({ ok: true, data: {} }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }`,
     })
     try {

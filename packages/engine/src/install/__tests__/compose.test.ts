@@ -46,17 +46,23 @@ function recordingAdapter(name: string): { adapter: Adapter; io: string[]; mcpDo
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           io.push(`install:${request.assetType}:${request.name}`)
           return planSingleFileInstall(
-            { file: file(request.assetType, request.name), boundary: projectRoot },
+            { file: file(request.assetType, request.name), boundary: projectRoot, storageRoot: projectRoot },
             request.content,
             request.metadata as Record<string, unknown>,
           )
         },
         async planRemoval(request) {
           io.push(`delete:${request.assetType}:${request.name}`)
-          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: projectRoot })
+          return planSingleFileRemoval({
+            file: file(request.assetType, request.name),
+            boundary: projectRoot,
+            storageRoot: projectRoot,
+          })
         },
       },
     },
@@ -823,11 +829,13 @@ describe('compose — persisting and pruning intent', () => {
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           return { ok: false, failure: { code: 'io-failed', path: '/dev/null', message: 'disk on fire' } }
         },
         async planRemoval() {
-          return { ok: true, plan: { kind: 'absent', primaryPath: '/dev/null' } }
+          return { ok: true, plan: { kind: 'absent', primaryPath: '/dev/null', storageRoot: '/' } }
         },
       },
     }
@@ -895,6 +903,8 @@ describe('compose — ordering against other failures', () => {
         throw new Error('contract method invoked despite incompatibility')
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           throw new Error('contract method invoked despite incompatibility')
         },

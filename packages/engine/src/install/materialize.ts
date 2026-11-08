@@ -7,6 +7,7 @@ import type {
   CompanionMap,
   PlanAssetInstallRequest,
   PlanAssetRemovalRequest,
+  PlanningContext,
 } from '@agent-facets/adapter'
 import type { MaterializedAsset, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
@@ -21,14 +22,15 @@ export interface MaterializeOptions {
   facetName: string
   manifest: ResolvedFacetManifest
   /**
-   * The project this run is installing into.
+   * The operation's planning context: its explicit target and the location
+   * inputs captured once for the whole run.
    *
-   * Handed to every adapter request, including user-scope ones. It is the only
-   * definition of "this project" an adapter may use: one that derived its own
-   * from the process working directory would resolve project-scoped assets
-   * against a different tree than the manifest, lockfile, and receipt.
+   * Handed unchanged to every adapter request. It is the only definition of
+   * "this project" an adapter may use: one that derived its own from the
+   * process working directory would resolve project-scoped assets against a
+   * different tree than the manifest, lockfile, and receipt.
    */
-  projectRoot: string
+  planningContext: PlanningContext
   adapters: Adapter[]
   /**
    * The assets to write, carrying both identities: the authored name that
@@ -149,7 +151,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       const ownedCompanionPaths = ownedCompanionPathsFor(opts.previousOwnership, asset)
 
       const planned = await planInstall(capability, {
-        projectRoot: opts.projectRoot,
+        context: opts.planningContext,
         target,
         content: contentFor(opts.manifest, asset),
         metadata: buildAssetMetadata(opts.manifest, asset, adapter.name),
@@ -266,7 +268,8 @@ function describeTarget(asset: MaterializedAsset): string {
 }
 
 export interface DeleteObsoleteOptions {
-  projectRoot: string
+  /** The operation's planning context. See {@link MaterializeOptions.planningContext}. */
+  planningContext: PlanningContext
   adapters: Adapter[]
   /**
    * Effective identities to delete, already proven unclaimed by the desired
@@ -310,7 +313,7 @@ export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise
       const target = assetIdentity(ownership.scope, ownership.type, ownership.effectiveName)
 
       const planned = await planRemoval(capability, {
-        projectRoot: opts.projectRoot,
+        context: opts.planningContext,
         target,
         ownedCompanionPaths: ownership.ownedCompanionPaths,
       })
@@ -372,7 +375,7 @@ function assetCapabilityFor(
 }
 
 interface InstallPlanInput {
-  projectRoot: string
+  context: PlanningContext
   target: AssetIdentity
   content: string
   metadata: unknown
@@ -397,7 +400,7 @@ async function planInstall(capability: AssetCapability, input: InstallPlanInput)
 }
 
 interface RemovalPlanInput {
-  projectRoot: string
+  context: PlanningContext
   target: AssetIdentity
   ownedCompanionPaths: readonly string[]
 }
@@ -421,7 +424,7 @@ async function planRemoval(capability: AssetCapability, input: RemovalPlanInput)
  * new bundle and never touches unowned files.
  */
 function installRequestFor(input: InstallPlanInput): PlanAssetInstallRequest {
-  const base = { projectRoot: input.projectRoot, scope: input.target.scope, name: input.target.name }
+  const base = { context: input.context, name: input.target.name }
   if (input.target.type === 'skill') {
     return {
       ...base,
@@ -436,7 +439,7 @@ function installRequestFor(input: InstallPlanInput): PlanAssetInstallRequest {
 }
 
 function removalRequestFor(input: RemovalPlanInput): PlanAssetRemovalRequest {
-  const base = { projectRoot: input.projectRoot, scope: input.target.scope, name: input.target.name }
+  const base = { context: input.context, name: input.target.name }
   if (input.target.type === 'skill') {
     return { ...base, assetType: 'skill', ownedCompanionPaths: input.ownedCompanionPaths }
   }
@@ -449,7 +452,13 @@ function describePlanFailure(failure: AdapterPlanFailure): string {
     case 'invalid-companion-path':
       return `invalid companion path "${failure.path}": ${failure.reason}`
     case 'unsupported-scope':
-      return `scope "${failure.scope}" is not supported by this adapter`
+      return `scope "${failure.scope}" is not supported by this adapter (it supports ${failure.supportedScopes.join(', ') || 'no scope'})`
+    case 'invalid-target':
+      return `invalid planning target: ${failure.field} ${failure.reason}`
+    case 'invalid-asset-name':
+      return `invalid asset name "${failure.name}": ${failure.reason}`
+    case 'invalid-storage-root':
+      return `${failure.path} is not within the disclosed storage root ${failure.storageRoot}: ${failure.reason}`
     case 'io-failed':
       return `could not read ${failure.path}: ${failure.message}`
     case 'unsupported-object':

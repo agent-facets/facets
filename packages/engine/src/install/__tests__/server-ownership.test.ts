@@ -59,7 +59,7 @@ function configuration(
   fingerprint: McpServerFingerprint = FP_A,
 ): PlannedServerConfiguration {
   return {
-    identity: { kind: 'mcp-server', effectiveName },
+    identity: { kind: 'mcp-server', scope: 'project', effectiveName },
     key: mcpServerKey(effectiveName),
     declaration: STDIO,
     fingerprint,

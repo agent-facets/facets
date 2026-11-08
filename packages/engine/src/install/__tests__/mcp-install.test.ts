@@ -84,11 +84,13 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}, sharedDocum
       // can never report an asset as unchanged, which would make the
       // equivalent-takeover case untestable.
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           io.push(`install:${request.assetType}:${request.name}`)
           timeline.push(`asset:install:${request.assetType}:${request.name}`)
           return planSingleFileInstall(
-            { file: file(request.assetType, request.name), boundary: baseDir() },
+            { file: file(request.assetType, request.name), boundary: baseDir(), storageRoot: baseDir() },
             request.content,
             request.metadata as Record<string, unknown>,
           )
@@ -96,7 +98,11 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}, sharedDocum
         async planRemoval(request) {
           io.push(`delete:${request.assetType}:${request.name}`)
           timeline.push(`asset:delete:${request.assetType}:${request.name}`)
-          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+          return planSingleFileRemoval({
+            file: file(request.assetType, request.name),
+            boundary: baseDir(),
+            storageRoot: baseDir(),
+          })
         },
       },
     },
@@ -510,7 +516,7 @@ describe('mcp — consent', () => {
     expect(seen?.takeovers).toEqual([
       {
         adapter: 'rec',
-        identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
         existing: 'divergent',
         declaration: STDIO as never,
       },
@@ -670,7 +676,7 @@ describe('mcp — consent', () => {
     expect(seen?.takeovers).toEqual([
       {
         adapter: 'rec',
-        identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
         existing: 'equivalent',
         declaration: STDIO as never,
       },
@@ -917,6 +923,8 @@ describe('mcp — one adapter per native document', () => {
     const untyped = {
       ...rec.adapter,
       mcpServers: {
+        supportedScopes: capability.supportedScopes,
+        locationEnvironment: capability.locationEnvironment,
         plan: async (request: Parameters<typeof capability.plan>[0]) => {
           const planned = await capability.plan(request)
           if (!planned.ok) return planned

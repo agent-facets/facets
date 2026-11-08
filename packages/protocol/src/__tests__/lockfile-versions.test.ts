@@ -147,6 +147,22 @@ describe('CurrentLockfileSchema', () => {
     expect(CurrentLockfileSchema(withAssets([agent, command]))).not.toBeInstanceOf(type.errors)
   })
 
+  test('generic validation keeps the full published scope vocabulary', () => {
+    // Agreement with a selected collection is a separate, contextual check;
+    // the schema itself neither narrows the vocabulary nor authorizes a
+    // system-wide installation by accepting it.
+    for (const scope of ['system', 'user', 'project']) {
+      const asset = {
+        scope,
+        type: 'agent',
+        name: 'reviewer',
+        materialization: { kind: 'authored' },
+        files: [{ path: 'agents/reviewer.md', integrity: HASH }],
+      }
+      expect(CurrentLockfileSchema(withAssets([asset]))).not.toBeInstanceOf(type.errors)
+    }
+  })
+
   function withAssets(assets: unknown[]): unknown {
     return {
       lockfileVersion: 0.4,

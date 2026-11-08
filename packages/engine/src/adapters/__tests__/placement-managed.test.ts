@@ -56,7 +56,7 @@ export default {
   apiVersion: '${api}',
   mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: {} }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }
 `,
   )

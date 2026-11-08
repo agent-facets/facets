@@ -1,5 +1,6 @@
+import { isAbsolute, resolve } from 'node:path'
 import { decodeFileText, type FileMutation, type FileState } from '@agent-facets/common'
-import { encodeText, readFileState, stateHoldsBytes } from './asset-fs.ts'
+import { encodeText, isStrictlyInside, readFileState, stateHoldsBytes } from './asset-fs.ts'
 import {
   type McpNativeMatch,
   mcpDeclarationLiterals,
@@ -33,10 +34,20 @@ import type { AdapterPlanFailure } from './types.ts'
  * writes are one change.
  */
 
-/** A document the adapter inspected, with the exact state it was in. */
+/**
+ * A document the adapter inspected, with the exact state it was in and the
+ * directory a write to it is authorized inside.
+ *
+ * The boundary is the adapter's resolved configuration directory for the
+ * request's scope — a project root, or a tool's user configuration directory.
+ * It travels with the document rather than being derived from the request,
+ * because a user-scope request has no project to derive it from, and one plan
+ * may span documents in different directories.
+ */
 export interface McpTextDocument {
   readonly path: string
   readonly state: FileState
+  readonly boundary: string
 }
 
 /** One document a plan would write. */
@@ -57,8 +68,11 @@ export type ReadTextResult =
  * Returns the exact state alongside the decoded text: the text is what the
  * adapter's parser needs, and the state is what a caller needs to detect a
  * concurrent edit and to put the bytes back if the operation fails.
+ *
+ * `boundary` is the directory a later write to this document is authorized
+ * inside; see {@link McpTextDocument}.
  */
-export function readTextOrAbsent(path: string): ReadTextResult {
+export function readTextOrAbsent(path: string, boundary: string): ReadTextResult {
   const state = readFileState(path)
   if (!state.ok) {
     // An unsupported object where a configuration document belongs is a
@@ -73,7 +87,7 @@ export function readTextOrAbsent(path: string): ReadTextResult {
     }
   }
   if (state.state.kind === 'absent') {
-    return { ok: true, text: null, document: { path, state: state.state } }
+    return { ok: true, text: null, document: { path, state: state.state, boundary } }
   }
   return {
     ok: true,
@@ -82,7 +96,7 @@ export function readTextOrAbsent(path: string): ReadTextResult {
     // does not re-add it on their next save; a decoder that ate it here would
     // make that preservation impossible and invisible.
     text: decodeFileText(state.state.contents),
-    document: { path, state: state.state },
+    document: { path, state: state.state, boundary },
   }
 }
 
@@ -92,6 +106,9 @@ function describeUnusablePath(failure: AdapterPlanFailure): string {
     case 'unrepresentable':
       return failure.detail
     case 'invalid-companion-path':
+    case 'invalid-asset-name':
+    case 'invalid-storage-root':
+    case 'invalid-target':
       return failure.reason
     case 'unsupported-scope':
       return `scope ${failure.scope} is not supported`
@@ -183,8 +200,22 @@ export interface PrepareMcpTextPlanInput {
  * dropped. Adapters legitimately re-render a whole layer to change one entry,
  * and writing back identical bytes would journal a transition this run did not
  * make and wake every tool watching that file.
+ *
+ * Every document must lie strictly inside its own boundary, and every edit
+ * must name an inspected document. Either inconsistency is returned as an
+ * `invalid-document` failure: without an exact prior state inside an
+ * authorized directory there is nothing a caller could safely apply.
  */
 export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServersResult {
+  for (const document of input.documents) {
+    if (!isAbsolute(document.boundary)) {
+      return invalidDocument(document.path, 'its authorized directory is not an absolute path')
+    }
+    if (!isStrictlyInside(resolve(document.path), resolve(document.boundary))) {
+      return invalidDocument(document.path, 'it does not lie inside its authorized directory')
+    }
+  }
+
   if (input.interpolation !== undefined) {
     const conflict = findInterpolationConflict(input.request.desired, input.interpolation)
     if (conflict !== undefined) return { ok: false, failure: conflict }
@@ -206,24 +237,24 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServe
   const built = input.buildEdits(outcomes)
   if (!built.ok) return { ok: false, failure: built.failure }
 
-  const states = new Map(input.documents.map((document) => [document.path, document.state]))
+  const inspected = new Map(input.documents.map((document) => [document.path, document]))
   const mutations: FileMutation[] = []
   for (const edit of built.edits) {
-    const expected = states.get(edit.path)
-    if (expected === undefined) {
+    const document = inspected.get(edit.path)
+    if (document === undefined) {
       // The adapter rendered an edit for a document it never reported reading,
-      // so no exact prior state exists for it. Caught here, before the plan is
-      // applicable, rather than by the caller after the bytes are on disk.
-      // The adapter broke its own contract, and no caller can act on it.
-      throw new Error(`prepareMcpTextPlan: buildEdits produced an edit for an uninspected document: ${edit.path}`)
+      // so no exact prior state exists for it. Refused here, before the plan
+      // is applicable, rather than discovered by the caller after the bytes
+      // are on disk.
+      return invalidDocument(edit.path, 'an edit names a document that was not inspected')
     }
     const contents = encodeText(edit.contents)
-    if (stateHoldsBytes(expected, contents)) continue
+    if (stateHoldsBytes(document.state, contents)) continue
     mutations.push({
       kind: 'write',
       path: edit.path,
-      boundary: input.request.projectRoot,
-      expected,
+      boundary: document.boundary,
+      expected: document.state,
       contents,
     })
   }
@@ -236,6 +267,10 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServe
     return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'unchanged' } } }
   }
   return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'mutate', mutations: [first, ...rest] } } }
+}
+
+function invalidDocument(path: string, reason: string): PlanMcpServersResult {
+  return { ok: false, failure: { code: 'invalid-document', path, reason } }
 }
 
 /**

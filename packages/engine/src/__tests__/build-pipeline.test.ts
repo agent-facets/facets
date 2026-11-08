@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type Adapter, defineAdapter } from '@agent-facets/adapter'
+import { type Adapter, type AdapterDefinition, defineAdapter } from '@agent-facets/adapter'
 import type { FacetManifest, McpServerDeclaration } from '@agent-facets/protocol'
 import { computeContentHash, detectNamingCollisions, validateCompactFacets } from '@agent-facets/protocol'
 import dedent from 'dedent'
@@ -136,26 +136,40 @@ describe('detectNamingCollisions', () => {
 
 // --- Adapter metadata validation ---
 
+/** The adapter a definition this file expects to be valid produces. */
+function definedAdapter(definition: AdapterDefinition): Adapter {
+  const result = defineAdapter(definition)
+  if (!result.ok) expect.unreachable()
+  return result.data
+}
+
 /** A mock adapter that accepts any data as valid metadata */
-const mockAdapter = defineAdapter({
+const mockAdapter = definedAdapter({
   name: 'mock-adapter',
   mcpServers: false,
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall() {
       return {
         ok: true as const,
-        plan: { occupancy: 'equivalent' as const, action: { kind: 'unchanged' as const }, primaryPath: '/dev/null' },
+        plan: {
+          occupancy: 'equivalent' as const,
+          action: { kind: 'unchanged' as const },
+          primaryPath: '/dev/null',
+          storageRoot: '/',
+        },
       }
     },
     async planRemoval() {
-      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null', storageRoot: '/' } }
     },
   },
 })
 
 /** A mock adapter that rejects all metadata */
-const rejectingAdapter = defineAdapter({
+const rejectingAdapter = definedAdapter({
   name: 'rejecting-adapter',
   mcpServers: false,
   buildAssetMetadata: () => ({
@@ -163,14 +177,21 @@ const rejectingAdapter = defineAdapter({
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
   }),
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall() {
       return {
         ok: true as const,
-        plan: { occupancy: 'equivalent' as const, action: { kind: 'unchanged' as const }, primaryPath: '/dev/null' },
+        plan: {
+          occupancy: 'equivalent' as const,
+          action: { kind: 'unchanged' as const },
+          primaryPath: '/dev/null',
+          storageRoot: '/',
+        },
       }
     },
     async planRemoval() {
-      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null', storageRoot: '/' } }
     },
   },
 })
@@ -494,11 +515,13 @@ describe('runBuildPipeline', () => {
       }),
     )
 
-    const mockAdapter = defineAdapter({
+    const mockAdapter = definedAdapter({
       name: 'mock-adapter',
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           return {
             ok: true as const,
@@ -506,11 +529,12 @@ describe('runBuildPipeline', () => {
               occupancy: 'equivalent' as const,
               action: { kind: 'unchanged' as const },
               primaryPath: '/dev/null',
+              storageRoot: '/',
             },
           }
         },
         async planRemoval() {
-          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null', storageRoot: '/' } }
         },
       },
     })
@@ -539,7 +563,7 @@ describe('runBuildPipeline', () => {
       }),
     )
 
-    const rejectingAdapter = defineAdapter({
+    const rejectingAdapter = definedAdapter({
       name: 'rejecting-adapter',
       mcpServers: false,
       buildAssetMetadata: () => ({
@@ -554,6 +578,8 @@ describe('runBuildPipeline', () => {
         ],
       }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           return {
             ok: true as const,
@@ -561,11 +587,12 @@ describe('runBuildPipeline', () => {
               occupancy: 'equivalent' as const,
               action: { kind: 'unchanged' as const },
               primaryPath: '/dev/null',
+              storageRoot: '/',
             },
           }
         },
         async planRemoval() {
-          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null', storageRoot: '/' } }
         },
       },
     })
@@ -626,7 +653,7 @@ describe('runBuildPipeline', () => {
 
     let enrichedData: Record<string, unknown> | undefined
 
-    const defaultingAdapter = defineAdapter({
+    const defaultingAdapter = definedAdapter({
       name: 'defaulting-adapter',
       mcpServers: false,
       buildAssetMetadata: (data) => {
@@ -636,6 +663,8 @@ describe('runBuildPipeline', () => {
         return { ok: true, data: enrichedData }
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           return {
             ok: true as const,
@@ -643,11 +672,12 @@ describe('runBuildPipeline', () => {
               occupancy: 'equivalent' as const,
               action: { kind: 'unchanged' as const },
               primaryPath: '/dev/null',
+              storageRoot: '/',
             },
           }
         },
         async planRemoval() {
-          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null', storageRoot: '/' } }
         },
       },
     })
@@ -1060,6 +1090,8 @@ describe('runBuildPipeline — adapter SDK API preflight', () => {
         throw new Error('contract method invoked despite incompatibility')
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           throw new Error('contract method invoked despite incompatibility')
         },

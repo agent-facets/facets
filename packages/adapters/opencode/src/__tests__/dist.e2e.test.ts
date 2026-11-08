@@ -15,7 +15,10 @@ import {
   loadDistMcpCapability,
   STDIO_SERVER,
 } from '@agent-facets/adapter-test-kit'
-import sourceAdapter from '../index.ts'
+import definition from '../index.ts'
+
+if (!definition.ok) throw new Error('the adapter definition must be valid')
+const sourceAdapter = definition.data
 
 const bundlePath = join(import.meta.dir, '../../dist/index.mjs')
 
@@ -30,7 +33,7 @@ test('bundled JSONC parser survives bundling', async () => {
     // a JSON parser would fail here.
     await Bun.write(join(root, '.opencode/opencode.jsonc'), '{\n  // servers\n  "mcp": {},\n}\n')
     const planned = await capability.plan({
-      projectRoot: root,
+      context: { target: { scope: 'project', projectRoot: root }, homeDirectory: '/home/unused', environment: {} },
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
@@ -55,7 +58,7 @@ test('the bundled capability creates its default document under .opencode', asyn
     // path a fresh project takes, and it only works if the plan's mutation
     // carries a boundary the caller can create directories under.
     const planned = await capability.plan({
-      projectRoot: root,
+      context: { target: { scope: 'project', projectRoot: root }, homeDirectory: '/home/unused', environment: {} },
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })

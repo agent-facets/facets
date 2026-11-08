@@ -17,10 +17,14 @@ import { verifyAdapter } from '../verify.ts'
 const THROWING_METHODS = `
   buildAssetMetadata() { throw new Error('contract method invoked during verification') },
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall() { throw new Error('contract method invoked during verification') },
     async planRemoval() { throw new Error('contract method invoked during verification') },
   },
   mcpServers: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async plan() { throw new Error('contract method invoked during verification') },
   },
 `
@@ -202,7 +206,7 @@ describe('verifyAdapter — ordered checks', () => {
   test('6: missing contract method fails with invalid-shape', async () => {
     await withBundle(
       `export default { name: 'incomplete', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
-       assets: { async planInstall() {}, async planRemoval() {} } }`,
+       assets: { supportedScopes: ['project'], locationEnvironment: [], async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
@@ -261,7 +265,7 @@ describe('verifyAdapter — ordered checks', () => {
     // completeness guarantee is re-established here on untrusted input.
     await withBundle(
       `export default { name: 'partial', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: {},
-       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
+       buildAssetMetadata() {}, assets: { supportedScopes: ['project'], locationEnvironment: [], async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
@@ -274,7 +278,7 @@ describe('verifyAdapter — ordered checks', () => {
   test('7: a current bundle declining MCP support verifies', async () => {
     await withBundle(
       `export default { name: 'declines', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
-       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
+       buildAssetMetadata() {}, assets: { supportedScopes: ['project'], locationEnvironment: [], async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (!result.ok) expect.unreachable()
@@ -290,7 +294,7 @@ describe('verifyAdapter — ordered checks', () => {
     // to trust this object would itself be bypassed.
     await withBundle(
       `export default { get name() { throw new Error('hostile') }, apiVersion: '${ADAPTER_API_VERSION}',
-       mcpServers: false, buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
+       mcpServers: false, buildAssetMetadata() {}, assets: { supportedScopes: ['project'], locationEnvironment: [], async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
@@ -303,7 +307,7 @@ describe('verifyAdapter — ordered checks', () => {
     await withBundle(
       `export default { name: 'hostile', apiVersion: '${ADAPTER_API_VERSION}',
        get mcpServers() { throw new Error('hostile') },
-       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
+       buildAssetMetadata() {}, assets: { supportedScopes: ['project'], locationEnvironment: [], async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
@@ -321,5 +325,118 @@ describe('verifyAdapter — ordered checks', () => {
       if (result.ok) expect.unreachable()
       expect(result.failure.kind).toBe('incompatible')
     })
+  })
+})
+
+// --- defineAdapter() result exports ---
+
+/** A bundle default-exporting a defineAdapter() result envelope around `body`. */
+function envelopeSource(body: string): string {
+  return `export default ${body}`
+}
+
+/** The adapter object source a successful envelope carries in `data`. */
+function adapterObject(fields: string): string {
+  return `{\n${fields}\n${THROWING_METHODS}\n}`
+}
+
+describe('verifyAdapter — defineAdapter() result exports', () => {
+  test('a successful result is verified through its adapter without invoking a contract method', async () => {
+    const data = adapterObject(`  name: 'wrapped', apiVersion: '${ADAPTER_API_VERSION}',`)
+    await withBundle(envelopeSource(`{ ok: true, data: ${data} }`), async (path) => {
+      const result = await verifyAdapter(path, { expectedApiVersion: ADAPTER_API_VERSION })
+      if (!result.ok) expect.unreachable()
+      expect(result.verified.adapter.name).toBe('wrapped')
+      expect(Object.hasOwn(result.verified.adapter, 'ok')).toBe(false)
+    })
+  })
+
+  test('a failed result is a structured definition failure carrying its errors', async () => {
+    const errors = `[{ path: 'name', message: 'missing', expected: 'a non-empty string', actual: 'missing' }]`
+    await withBundle(envelopeSource(`{ ok: false, errors: ${errors} }`), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'definition-invalid') expect.unreachable()
+      expect(result.failure.errors).toEqual([
+        { path: 'name', message: 'missing', expected: 'a non-empty string', actual: 'missing' },
+      ])
+    })
+  })
+
+  test.each([
+    ['a non-boolean discriminant', `{ ok: 'yes', data: {} }`],
+    ['a success with no adapter', `{ ok: true }`],
+    ['a failure with no errors', `{ ok: false, errors: [] }`],
+    ['a failure with a malformed error', `{ ok: false, errors: [{ path: 1 }] }`],
+  ])('%s is an invalid export, never reread as a bare adapter', async (_label, body) => {
+    await withBundle(envelopeSource(body), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      expect(result.failure.kind).toBe('invalid-export')
+    })
+  })
+
+  test('a successful envelope cannot hide an incomplete adapter', async () => {
+    const data = `{ name: 'hollow', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
+      buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`
+    await withBundle(envelopeSource(`{ ok: true, data: ${data} }`), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'invalid-capability') expect.unreachable()
+      expect(result.failure.detail).toContain('supportedScopes')
+    })
+  })
+
+  test('a successful envelope cannot admit a superseded API', async () => {
+    const data = adapterObject(`  name: 'old', apiVersion: '0.3',`)
+    await withBundle(envelopeSource(`{ ok: true, data: ${data} }`), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'incompatible') expect.unreachable()
+      expect(result.failure.failure.kind).toBe('api-unsupported')
+    })
+  })
+
+  test('package agreement is checked against the payload, not the envelope', async () => {
+    const data = adapterObject(`  name: 'split', apiVersion: '0.3',`)
+    await withBundle(envelopeSource(`{ ok: true, data: ${data} }`), async (path) => {
+      const result = await verifyAdapter(path, { expectedApiVersion: ADAPTER_API_VERSION })
+      if (result.ok) expect.unreachable()
+      expect(result.failure.kind).toBe('incompatible')
+    })
+  })
+})
+
+describe('verifyAdapter — capability declarations', () => {
+  const bundle = (assets: string) =>
+    `export default { name: 'declared', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
+      buildAssetMetadata() {}, assets: { ${assets} async planInstall() {}, async planRemoval() {} } }`
+
+  test.each([
+    ['missing scopes', `locationEnvironment: [],`, 'supportedScopes'],
+    ['empty scopes', `supportedScopes: [], locationEnvironment: [],`, 'supportedScopes'],
+    ['an unknown scope', `supportedScopes: ['system'], locationEnvironment: [],`, 'system'],
+    ['a repeated scope', `supportedScopes: ['user', 'user'], locationEnvironment: [],`, 'repeats'],
+    ['a missing environment declaration', `supportedScopes: ['user'],`, 'locationEnvironment'],
+    ['an invalid environment name', `supportedScopes: ['user'], locationEnvironment: ['NOT-OK'],`, 'NOT-OK'],
+  ])('%s fails as invalid-capability', async (_label, declarations, detail) => {
+    await withBundle(bundle(declarations), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'invalid-capability') expect.unreachable()
+      expect(result.failure.detail).toContain(detail)
+    })
+  })
+
+  test('complete declarations verify', async () => {
+    await withBundle(
+      bundle(`supportedScopes: ['project', 'user'], locationEnvironment: ['XDG_CONFIG_HOME'],`),
+      async (path) => {
+        const result = await verifyAdapter(path)
+        if (!result.ok) expect.unreachable()
+        if (result.verified.adapter.assets === false) expect.unreachable()
+        expect(result.verified.adapter.assets.supportedScopes).toEqual(['project', 'user'])
+      },
+    )
   })
 })

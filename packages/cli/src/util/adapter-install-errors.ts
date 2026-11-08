@@ -241,6 +241,18 @@ function describeVerifyFailure(
         detail: `the bundle at ${failure.bundlePath} must export default from defineAdapter()`,
         fix: 'rebuild the adapter so its entry point default-exports the defineAdapter() result',
       }
+    case 'definition-invalid':
+      return {
+        what: `adapter "${specifier}" has an invalid definition`,
+        detail: failure.errors.map((error) => `${error.path || '(definition)'}: ${error.message}`).join('; '),
+        fix: 'correct the reported defineAdapter() fields, then rebuild the adapter',
+      }
+    case 'invalid-export':
+      return {
+        what: `adapter "${specifier}" exports a malformed defineAdapter() result`,
+        detail: `${failure.detail} (bundle at ${failure.bundlePath})`,
+        fix: 'default-export the defineAdapter() result unchanged, or a complete adapter object, then rebuild',
+      }
     case 'incompatible':
       // Prefer the caller's specifier for the install command: a
       // nameless bundle's identity is its (transient) bundle path.
@@ -261,7 +273,7 @@ function describeVerifyFailure(
       return {
         what: `adapter "${failure.adapter}" declares adapter SDK API ${failure.api} but does not implement it`,
         detail: failure.detail,
-        fix: 'declare "mcpServers" as false or a complete { prepare, apply } capability, then rebuild the adapter',
+        fix: 'declare each capability as false or complete — its operations plus supportedScopes and locationEnvironment — then rebuild the adapter',
       }
   }
 }

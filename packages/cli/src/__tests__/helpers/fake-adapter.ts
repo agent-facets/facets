@@ -27,7 +27,7 @@ import { join } from 'node:path'
 
 const encoder = new TextEncoder()
 
-function base(req) { return join(req.projectRoot, '.${name}') }
+function base(req) { return join(req.context.target.projectRoot, '.${name}') }
 function path(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 
 /** The exact state of a path: absent, or its bytes plus permission bits. */
@@ -52,7 +52,10 @@ function readMcp(root) {
 }
 
 const mcpCapability = {
-  async plan({ projectRoot, desired, previouslyOwnedNames }) {
+  supportedScopes: ['project'],
+  locationEnvironment: [],
+  async plan({ context, desired, previouslyOwnedNames }) {
+    const projectRoot = context.target.projectRoot
     const doc = readMcp(projectRoot)
     const before = JSON.stringify(doc)
     const outcomes = []
@@ -102,6 +105,8 @@ const mcpCapability = {
 }
 
 const assets = {
+  supportedScopes: ['project'],
+  locationEnvironment: [],
   async planInstall(req) {
     const file = path(req)
     const expected = stateOf(file)
@@ -110,13 +115,14 @@ const assets = {
     }
     const contents = encoder.encode(req.content)
     if (sameBytes(expected, contents)) {
-      return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: file } }
+      return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: file, storageRoot: base(req) } }
     }
     return {
       ok: true,
       plan: {
         occupancy: expected.kind === 'absent' ? 'absent' : 'divergent',
         primaryPath: file,
+        storageRoot: base(req),
         action: {
           kind: 'mutate',
           mutations: [{ kind: 'write', path: file, boundary: base(req), expected, contents }],
@@ -130,12 +136,13 @@ const assets = {
     if (expected === null) {
       return { ok: false, failure: { code: 'unsupported-object', path: file, detail: 'not a plain file' } }
     }
-    if (expected.kind === 'absent') return { ok: true, plan: { kind: 'absent', primaryPath: file } }
+    if (expected.kind === 'absent') return { ok: true, plan: { kind: 'absent', primaryPath: file, storageRoot: base(req) } }
     return {
       ok: true,
       plan: {
         kind: 'remove',
         primaryPath: file,
+        storageRoot: base(req),
         action: {
           kind: 'mutate',
           mutations: [{ kind: 'delete', path: file, boundary: base(req), expected }],
