@@ -59,8 +59,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.0.0",
-      "integrity": "sha256:5733e9753ea5b9e2a4ac1ff9f7d4f05ad6c6b2ac74fd1862cca8da2120d554c0",
+      "version": "1.0.1",
+      "integrity": "sha256:d06388ae3a2b022454b856025d295241ed9b34dcca7f5a9bf21523d22fd3c9a2",
       "assets": [
         {
           "scope": "project",
@@ -72,7 +72,7 @@
           "files": [
             {
               "path": "skills/graphite-submit-branch-rules/SKILL.md",
-              "integrity": "sha256:c612d55c2104ff93da406f349b784a08ac975a5b49b726008b8ccc52d6da785a"
+              "integrity": "sha256:9959d2a5ba65003c781e4ed11d3d45584a5f6552f1da51d362be285287869201"
             }
           ]
         },
@@ -112,8 +112,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "3.2.5",
-      "integrity": "sha256:7f253812b6849e8d8ad02183d257af409840258471102709f04438ea5b8a89c2",
+      "version": "3.2.6",
+      "integrity": "sha256:ad3402e9525834210c06e2ae610cff78af21bc17f51e0843a6271031e1348f37",
       "assets": [
         {
           "scope": "project",
@@ -223,7 +223,7 @@
           "files": [
             {
               "path": "commands/run-adversary.md",
-              "integrity": "sha256:2ef1a8624d6809f68205e191fe45a81954ed67e5d37022d71f1f0c8e5729db4c"
+              "integrity": "sha256:f7af0fcba79bf2fb57b819a15f1ce1a3f827483e2e1ebba6d0ebdfd51dd8e7be"
             }
           ]
         },
@@ -288,8 +288,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.0.1",
-      "integrity": "sha256:aa526ad78d470605791c99204792df8afe81fb497778e4d1712261da6f517e67",
+      "version": "1.0.2",
+      "integrity": "sha256:ce230826b352f9930727f532746c9fccfda279e210a300c225873e681745d234",
       "assets": [
         {
           "scope": "project",
@@ -315,7 +315,7 @@
           "files": [
             {
               "path": "agents/cowsay.md",
-              "integrity": "sha256:61190c64c8b6f925718c6d27fa21c2ee1af7299fb00eeb21c65201cb0fec0b6d"
+              "integrity": "sha256:9a1bc791f73f9b256f5f754f82115ff3280f053fff28027384f8500bc74bd6a8"
             }
           ]
         },
@@ -329,7 +329,7 @@
           "files": [
             {
               "path": "commands/cowchat.md",
-              "integrity": "sha256:2cc1f8723c1ac12eabaeeb56ff0f95cc4d22d5cb687bfc40f7015244ffcc0231"
+              "integrity": "sha256:0ad44a7c8f13e38d3f7cf88263112f74a9de9a7886d6b5b296acaa30300fbb6b"
             }
           ]
         },
@@ -343,7 +343,7 @@
           "files": [
             {
               "path": "commands/cowsay.md",
-              "integrity": "sha256:dfb51935425ff8efade68abc246b35f366aa62ac44b242210035b88f397ec6fe"
+              "integrity": "sha256:3c96fa4b5c59b0687df9dbcab62fbd8695efc1020f79180fcae8edd57164dee6"
             }
           ]
         }
