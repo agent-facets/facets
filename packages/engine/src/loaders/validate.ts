@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import type { ValidationError } from '@agent-facets/common'
 
 /**
@@ -20,6 +21,23 @@ export async function readFile(
           message: `File not found: ${filePath}`,
           expected: 'file to exist',
           actual: 'file not found',
+        },
+      ],
+    }
+  }
+
+  // Only a regular file is read. A FIFO or device at this path would block
+  // `file.text()` with no writer, hanging the command; a directory has no text.
+  const info = await stat(filePath).catch(() => undefined)
+  if (info === undefined || !info.isFile()) {
+    return {
+      ok: false,
+      errors: [
+        {
+          path: '',
+          message: `Not a regular file: ${filePath}`,
+          expected: 'a regular file',
+          actual: info === undefined ? 'unreadable' : 'another kind of file',
         },
       ],
     }

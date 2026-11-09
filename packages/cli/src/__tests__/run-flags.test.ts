@@ -210,3 +210,24 @@ describe('run — global --version is positional-aware', () => {
     expect(captured()?.flags.version).toBe('1.2.3')
   })
 })
+
+describe('run — the `--` separator', () => {
+  test('everything after `--` is positional, even when it looks like a flag', async () => {
+    const { registry, captured } = captureRegistry({
+      path: { type: 'boolean', description: 'path' },
+    })
+    const code = await run(['demo', 'cowsay', '--', '--help', '--path', '-x'], registry)
+    expect(code).toBe(0)
+    expect(captured()?.args).toEqual(['cowsay', '--help', '--path', '-x'])
+    expect(captured()?.flags).toEqual({})
+  })
+
+  test('flags before `--` still apply, and `--` itself is not passed on', async () => {
+    const { registry, captured } = captureRegistry({
+      path: { type: 'boolean', description: 'path' },
+    })
+    await run(['demo', '--path', 'cowsay', '--', 'file'], registry)
+    expect(captured()?.args).toEqual(['cowsay', 'file'])
+    expect(captured()?.flags).toEqual({ path: true })
+  })
+})

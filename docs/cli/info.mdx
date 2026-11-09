@@ -1,0 +1,88 @@
+---
+title: facet info
+description: Summarize a facet and its contents
+---
+
+## Usage
+
+```sh
+facet info <name>
+```
+
+Prints a summary of one <Tooltip tip="A versioned bundle of skills, agents, commands, and MCP server declarations for AI coding tools.">facet</Tooltip> installed in the current project: what it does, every asset it ships, and the command that prints each one. The summary is read from the copy installed on this machine, so `facet info` never contacts the registry.
+
+## Examples
+
+```sh
+facet info cowsay
+facet info @agentfacets/betterstack   # scoped names work as written in facets.json
+```
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The summary was printed. |
+| `1` | The facet is not installed in this project, its local copy is missing or does not match `facets.lock`, or `facets.json` or `facets.lock` could not be read. |
+| `2` | An unexpected error escaped command handling. |
+
+## Output
+
+```
+cowsay  v1.0.0 · by "Cow Co"
+Installed · read from your local copy
+
+Check for updates: facet outdated
+
+  What does the cow say?
+
+Skills (1)
+  cowsay-rules   Canonical ASCII cow and speech-bubble format.
+                 facet cat cowsay cowsay-rules
+
+Commands (2)
+  cowsay         Have the cowsay subagent say your message.     installed as moo
+                 facet cat cowsay commands/cowsay
+  cowchat        Have the cowsay subagent reply in character.   omitted
+                 facet cat cowsay cowchat
+
+Agents (1)
+  cowsay         Renders an ASCII cow in say or chat mode.
+                 facet cat cowsay agents/cowsay
+
+Files (1)
+  facet.json     facet cat cowsay facet.json
+
+WEB: https://agentfacets.io/facets/cowsay
+```
+
+- **Header.** Name, installed version, and the free-text `author` from the facet's manifest, when it sets one. The author is quoted because the publisher writes it and nothing verifies it.
+- **Source.** The line under the name says where the summary was read from: your local copy, or a local facet's source directory.
+- **Groups.** Skills, commands, agents, and MCP servers, each with its description. An MCP server shows `http · <url>`, or `stdio · <command> <args>` and each environment variable with the value the facet sets, such as `env: NODE_OPTIONS='--require ./x.js'`. These are the publisher's values, not yours, and they change what the server runs.
+- **Status column.** `installed as <name>` when `facets.json` aliases the asset, and `omitted` when it is not installed at all. See [Materialization](/specification/materialization).
+- **Hints.** Each skill, command, agent, and declared file has the [`facet cat`](/cli/cat) command that prints it. A skill's companion files are listed under it with `+`. A binary file shows its size in place of a hint.
+- **Files.** The manifest, `facet.json`, and top-level declared files, such as `README.md`. Print `facet.json` to check the summary against the raw manifest.
+
+## Details
+
+### Where the summary comes from
+
+A registry or Git facet is read from its copy in the local cache, and only after that copy is checked against the integrity recorded in `facets.lock`. A copy that fails the check is reported and left as it is; run [`facet install`](/cli/install) to repair it. A local facet is read from its source directory.
+
+### Updates
+
+`facet info` does not check for newer releases. Run [`facet outdated`](/cli/outdated).
+
+### Output is safe to read
+
+Facet text is written by its publisher. Control characters, terminal escape sequences, and invisible or direction-changing Unicode in it, such as the tag characters that can hide text from you while an agent still reads it, are shown as visible escapes (`^[`, `<U+202E>`, `<U+E0041>`) instead of being sent to your terminal. Line breaks in publisher text are shown as spaces, so a description cannot add lines that look like part of the summary. A server URL with a look-alike Unicode host name is shown in its `xn--` form, which is the host the client connects to. Hints and `stdio` server arguments quote anything a shell would otherwise interpret, so a copied command runs as shown.
+
+### Website link
+
+The last line links to the facet's page on the Agent Facets website. Set [`FACET_WEB_URL`](/cli/env#facet_web_url) to link to another site. When [`FACET_REGISTRY_URL`](/cli/env#facet_registry_url) points at another registry and `FACET_WEB_URL` is not set, the line is left out.
+
+## See also
+
+- [`facet cat`](/cli/cat)
+- [`facet outdated`](/cli/outdated)
+- [`facet list`](/cli/list)
