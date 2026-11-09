@@ -1,0 +1,59 @@
+---
+title: facet cat
+description: Print one asset or file from a facet
+---
+
+## Usage
+
+```sh
+facet cat <name> <asset-or-path>
+```
+
+Prints the content of one skill, command, agent, or declared file of a facet installed in the current project, exactly as installed. It reads the same verified local copy as [`facet info`](/cli/info), whose output lists the `facet cat` command for every printable file.
+
+## Selecting a file
+
+| Form | Example | Selects |
+| --- | --- | --- |
+| Asset name | `cowsay-rules` | The one skill, command, or agent with that name |
+| Folder and name | `agents/cowsay` | That asset, when an agent shares its name with a skill or command |
+| File path | `commands/cowsay.md` | That exact file |
+| Declared file | `README.md`, `skills/review/references/api.md` | A file listed in the manifest's `files` |
+| Manifest | `facet.json` | The facet's manifest |
+
+Only `facet.json` and the files the manifest declares can be selected. Anything else, including paths with `..`, is reported as matching nothing. For a facet read from a directory on this machine, a declared file that is a link, or that resolves outside the facet's directory, is refused.
+
+## Examples
+
+```sh
+facet cat cowsay cowsay-rules                 # a skill's SKILL.md
+facet cat cowsay agents/cowsay                # the agent, not the command of the same name
+facet cat cowsay README.md | less             # page through a file
+facet cat cowsay cowsay-rules > rules.md      # an exact copy
+$EDITOR "$(facet cat --path cowsay README.md)" # open the installed file in your editor
+```
+
+## Flags
+
+<ResponseField name="--path" type="boolean">
+  Print the location of the file on this machine instead of its content. The file is not opened.
+</ResponseField>
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The file, or its path, was printed. |
+| `1` | The facet is not installed, its local copy is missing or does not match `facets.lock`, the selector matched nothing or more than one asset, it named an MCP server, or the file is binary. |
+| `2` | An unexpected error escaped command handling. |
+
+## Output
+
+On a terminal, control characters and invisible or direction-changing Unicode, including tag characters, are shown as visible escapes (`^[`, `<U+202E>`, `<U+E0041>`), and a note on stderr says how many. Redirected or piped, the file's bytes are written unchanged.
+
+Errors go to stderr, so stdout only ever holds the file.
+
+## See also
+
+- [`facet info`](/cli/info)
+- [`facet list`](/cli/list)
