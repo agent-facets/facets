@@ -107,6 +107,15 @@ export function formatInfo(input: FormatInfoInput, width: number): Line[] {
 
 /** Where the summary was read from, so a registry read is never mistaken for the installed copy. */
 function sourceLines(origin: FormatInfoInput['view']['origin']): Line[] {
+  if (origin.kind === 'registry-latest') {
+    return [[{ text: 'Not installed · read from the registry (latest published version)', style: 'dim' }]]
+  }
+  if (origin.from === 'registry') {
+    return [
+      [{ text: 'Installed · read from the registry, because your local copy is missing or damaged', style: 'dim' }],
+      [{ text: `${INDENT}run: facet install   to repair it`, style: 'hint' }],
+    ]
+  }
   return [
     [
       {

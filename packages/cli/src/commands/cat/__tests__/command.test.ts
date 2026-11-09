@@ -126,12 +126,81 @@ describe('facet cat — terminal safety', () => {
     expect(stderr).toBe('')
   })
 
+  test('on a terminal, a file from the registry says so on stderr', async () => {
+    stdoutIsTty(true)
+    loaderReturns({ ok: true, view: { ...fakeView(), origin: { kind: 'registry-latest' } } })
+    const { code, stdout, stderr } = await run(['cowsay', 'README.md'])
+    expect(code).toBe(0)
+    expect(stdout).toBe('# Cowsay\n')
+    expect(stderr).toContain('note: from the registry: cowsay v1.0.2 (not installed)')
+  })
+
+  test('piped, a file from the registry adds nothing to stderr', async () => {
+    stdoutIsTty(false)
+    loaderReturns({ ok: true, view: { ...fakeView(), origin: { kind: 'registry-latest' } } })
+    const { stderr } = await run(['cowsay', 'README.md'])
+    expect(stderr).toBe('')
+  })
+
+  test('on a terminal, a file from the local copy adds no note', async () => {
+    stdoutIsTty(true)
+    loaderReturns({ ok: true, view: fakeView() })
+    const { stderr } = await run(['cowsay', 'README.md'])
+    expect(stderr).toBe('')
+  })
+
   test('on a terminal, --path is shell-quoted', async () => {
     stdoutIsTty(true)
     const view = { ...fakeView(), localPath: async () => '/cache/my facets/README.md' }
     loaderReturns({ ok: true, view })
     const { stdout } = await run(['cowsay', 'README.md'], { path: true })
     expect(stdout).toBe("'/cache/my facets/README.md'\n")
+  })
+})
+
+describe('facet cat — registry reads', () => {
+  function registryView(read: FacetFileRead): FacetView {
+    return {
+      ...fakeView(),
+      origin: { kind: 'registry-latest' },
+      readFile: async () => read,
+      localPath: async () => undefined,
+    }
+  }
+
+  test('an unreachable registry renders the network guidance', async () => {
+    loaderReturns({
+      ok: true,
+      view: registryView({
+        ok: false,
+        code: 'registry',
+        error: { code: 'NETWORK_ERROR', cause: 'fetch failed', attempts: 1 },
+      }),
+    })
+    const { code, stdout, stderr } = await run(['cowsay', 'README.md'])
+    expect(code).toBe(1)
+    expect(stdout).toBe('')
+    expect(stderr).toContain('could not reach the registry')
+  })
+
+  test('registry content that does not match is refused with the install fix', async () => {
+    loaderReturns({
+      ok: true,
+      view: registryView({ ok: false, code: 'integrity-mismatch', expected: 'sha256:a', observed: 'sha256:b' }),
+    })
+    const { code, stdout, stderr } = await run(['cowsay', 'README.md'])
+    expect(code).toBe(1)
+    expect(stdout).toBe('')
+    expect(stderr).toContain('does not match')
+    expect(stderr).toContain('facet install')
+  })
+
+  test('--path for a facet that is not installed points to facet add', async () => {
+    loaderReturns({ ok: true, view: registryView({ ok: true, kind: 'text', content: 'x' }) })
+    const { code, stdout, stderr } = await run(['cowsay', 'README.md'], { path: true })
+    expect(code).toBe(1)
+    expect(stdout).toBe('')
+    expect(stderr).toContain('facet add cowsay')
   })
 })
 
@@ -193,11 +262,14 @@ describe('facet cat — refusals', () => {
     expect(stderr).toContain('facet cat <name> <asset-or-path>')
   })
 
-  test('a facet that is not installed points to facet add', async () => {
-    loaderReturns({ ok: false, failure: { code: 'not-installed' } })
+  test('a facet the registry does not have points to facet search', async () => {
+    loaderReturns({
+      ok: false,
+      failure: { code: 'registry', error: { code: 'NOT_FOUND', name: 'mobbin', spec: 'latest' } },
+    })
     const { code, stdout, stderr } = await run(['mobbin', 'using-mobbin'])
     expect(code).toBe(1)
     expect(stdout).toBe('')
-    expect(stderr).toContain('facet add mobbin')
+    expect(stderr).toContain('facet search mobbin')
   })
 })

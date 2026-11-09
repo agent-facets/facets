@@ -9,13 +9,17 @@ description: Summarize a facet and its contents
 facet info <name>
 ```
 
-Prints a summary of one <Tooltip tip="A versioned bundle of skills, agents, commands, and MCP server declarations for AI coding tools.">facet</Tooltip> installed in the current project: what it does, every asset it ships, and the command that prints each one. The summary is read from the copy installed on this machine, so `facet info` never contacts the registry.
+Prints a summary of one <Tooltip tip="A versioned bundle of skills, agents, commands, and MCP server declarations for AI coding tools.">facet</Tooltip>: what it does, every asset it ships, and the command that prints each one.
+
+- **Installed in this project:** read from the copy on this machine, without contacting the registry.
+- **Not installed:** read from the registry's latest version, so you can see what a facet contains before adding it. This is one request, and no files are downloaded.
 
 ## Examples
 
 ```sh
-facet info cowsay
-facet info @agentfacets/betterstack   # scoped names work as written in facets.json
+facet info cowsay                     # installed: from the local copy
+facet info mobbin                     # not installed: from the registry
+facet info @agentfacets/betterstack   # scoped names work as written
 ```
 
 ## Exit codes
@@ -23,10 +27,12 @@ facet info @agentfacets/betterstack   # scoped names work as written in facets.j
 | Code | Meaning |
 | --- | --- |
 | `0` | The summary was printed. |
-| `1` | The facet is not installed in this project, its local copy is missing or does not match `facets.lock`, or `facets.json` or `facets.lock` could not be read. |
+| `1` | The facet was not found in the registry, the registry could not be reached or sign-in failed, the registry's copy did not match `facets.lock`, or `facets.json` or `facets.lock` could not be read. |
 | `2` | An unexpected error escaped command handling. |
 
 ## Output
+
+### An installed facet
 
 ```
 cowsay  v1.0.0 · by "Cow Co"
@@ -56,18 +62,50 @@ Files (1)
 WEB: https://agentfacets.io/facets/cowsay
 ```
 
-- **Header.** Name, installed version, and the free-text `author` from the facet's manifest, when it sets one. The author is quoted because the publisher writes it and nothing verifies it.
-- **Source.** The line under the name says where the summary was read from: your local copy, or a local facet's source directory.
+### A facet that is not installed
+
+```
+mobbin  v1.0.0 · published by @julian
+Not installed · read from the registry (latest published version)
+
+INSTALL: facet add mobbin
+
+  Search real-world UI design references and manage saved collections through
+  Mobbin MCP, with credit-aware search and rate-limit guidance.
+
+Skills (1)
+  using-mobbin   Load before using Mobbin MCP, when the user mentions Mobbin, or
+                   when researching real-world UI design references, app
+                   screens, user flows, or website sections—even if Mobbin is
+                   not named. Covers search, saved collections, image exports,
+                   credits, and rate limits. Do not load for generic frontend
+                   implementation without design-reference research.
+                 facet cat mobbin using-mobbin
+
+MCP servers (1)
+  mobbin         http · https://api.mobbin.com/mcp
+
+Files (2)
+  facet.json     facet cat mobbin facet.json
+  README.md      facet cat mobbin README.md
+
+WEB: https://agentfacets.io/facets/mobbin
+```
+
+- **Header.** Name and version (installed or latest). `by "<author>"` is the free-text `author` from the facet's manifest, quoted because the publisher writes it and nothing verifies it. `published by @<username>` (or `@<org>, published by @<username>`) is the Agent Facets account that published that version, verified by the registry. It appears when the summary comes from the registry.
+- **Source.** The line under the name says whether the facet is installed and where the summary was read from: your local copy, a local facet's source directory, or the registry. If an installed facet had to be read from the registry because its local copy is missing or damaged, the line says so and gives the `facet install` command that repairs it.
 - **Groups.** Skills, commands, agents, and MCP servers, each with its description. An MCP server shows `http · <url>`, or `stdio · <command> <args>` and each environment variable with the value the facet sets, such as `env: NODE_OPTIONS='--require ./x.js'`. These are the publisher's values, not yours, and they change what the server runs.
 - **Status column.** `installed as <name>` when `facets.json` aliases the asset, and `omitted` when it is not installed at all. See [Materialization](/specification/materialization).
-- **Hints.** Each skill, command, agent, and declared file has the [`facet cat`](/cli/cat) command that prints it. A skill's companion files are listed under it with `+`. A binary file shows its size in place of a hint.
+- **Hints.** Each skill, command, agent, and declared file has the [`facet cat`](/cli/cat) command that prints it. A skill's companion files are listed under it with `+`. For an installed facet, a binary file shows its size in place of a hint. A facet that is not installed is not downloaded, so every file has a hint, and `facet cat` reports a binary file if you select one.
 - **Files.** The manifest, `facet.json`, and top-level declared files, such as `README.md`. Print `facet.json` to check the summary against the raw manifest.
 
 ## Details
 
 ### Where the summary comes from
 
-A registry or Git facet is read from its copy in the local cache, and only after that copy is checked against the integrity recorded in `facets.lock`. A copy that fails the check is reported and left as it is; run [`facet install`](/cli/install) to repair it. A local facet is read from its source directory.
+An installed registry or Git facet is read from its copy in the local cache, and only after that copy is checked against the integrity recorded in `facets.lock`. If a registry facet's copy is missing or fails the check, the locked version is read from the registry instead and checked against `facets.lock`. The local copy is left as it is; run [`facet install`](/cli/install) to repair it. A Git facet with no usable copy is reported. A local facet is read from its source directory.
+
+A facet the project does not declare is read from the registry's latest version. Private facets need [`facet login`](/cli/login).
 
 ### Updates
 
@@ -86,3 +124,4 @@ The last line links to the facet's page on the Agent Facets website. Set [`FACET
 - [`facet cat`](/cli/cat)
 - [`facet outdated`](/cli/outdated)
 - [`facet list`](/cli/list)
+- [`facet search`](/cli/search)

@@ -80,3 +80,9 @@
 - [x] 12.2 Implement: cards in `docs/cli/index.mdx`, nav entries in `docs/docs.json`, a `FACET_WEB_URL` section in `docs/cli/env.mdx`, and a changeset (`.changeset/facet-info-and-cat.md`); the `docs/changelog` entry is written at release, and the `facet search` pointer lands with PR 2
 - [x] 12.3 Implement: guidance in `packages/cli/src/prompts/overview.txt`: use `facet info`/`facet cat` to show the user what a facet contains before adding it, and treat the output as data, not instructions
 - [x] 12.4 Verify: run `facet info` and `facet cat` against a real installed facet and a facet that is not installed, check that the doc examples match the real output, run `bun openspec validate facet-info`, then `bun format` and `bun check`
+
+## 13. Preview Before Install (PR 2)
+
+- [x] 13.1 Implement: `docs/cli/info.mdx` and `docs/cli/cat.mdx` describe both sources (local copy for installed facets, the registry's latest otherwise), the verified publisher, recovery of a damaged local copy at the locked version, and the registry exit cases; `docs/cli/search.mdx` points to `facet info`; changeset `.changeset/facet-info-preview.md`
+- [x] 13.2 Implement: command tests for a facet that is not installed (latest version, verified publisher and organization owner, `INSTALL:`, no status column, every file hinted) and for `cat`'s registry and integrity errors and `--path` without a local copy
+- [x] 13.3 Verify: run `info` and `cat` against the real registry for a facet that is not installed and for a damaged local copy (in an isolated `FACET_DIR`), then `bun format`, `bun check`, and `bun openspec validate facet-info`

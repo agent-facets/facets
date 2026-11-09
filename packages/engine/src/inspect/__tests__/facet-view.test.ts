@@ -3,6 +3,7 @@ import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, sym
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { CACHE_INTEGRITY_FILE, cachePath, computeDirIntegrity } from '../../cache/index.ts'
+import type { WireContentsResponse, WireMetadataResponse } from '../../registry/wire.ts'
 import { loadFacetView } from '../facet-view.ts'
 
 const REGISTRY = 'https://registry.test'
@@ -140,6 +141,37 @@ function stubRegistry(handler: (path: string) => Response): string[] {
   return seen
 }
 
+function metadata(integrity: string, version = '1.0.2') {
+  return {
+    name: 'cowsay',
+    version,
+    content_hash: `sha256:${'1'.repeat(64)}`,
+    content_integrity: integrity,
+    manifest_json: JSON.stringify({ ...MANIFEST, version }),
+    owner: { kind: 'user', username: 'shaun' },
+    publisher: 'shaun',
+    published_at: '2026-11-01T00:00:00.000Z',
+    size_bytes: 100,
+    visibility: 'public',
+    asset_counts: { agents: 1, commands: 1, servers: 1, skills: 1 },
+    author: 'Cow Co',
+    description: 'What does the cow say?',
+  } satisfies WireMetadataResponse
+}
+
+function contents(integrity: string, version = '1.0.2') {
+  const files: WireContentsResponse['files'] = []
+  for (const [path, body] of Object.entries(FILES)) {
+    if (path === 'facet.json') continue
+    if (typeof body === 'string') {
+      files.push({ kind: 'text', path, content: body, sha256: `sha256:${'2'.repeat(64)}`, size_bytes: body.length })
+    } else {
+      files.push({ kind: 'binary', path, sha256: `sha256:${'2'.repeat(64)}`, size_bytes: body.length })
+    }
+  }
+  return { name: 'cowsay', version, content_integrity: integrity, files } satisfies WireContentsResponse
+}
+
 describe('loadFacetView — installed', () => {
   test('reads a verified cache slot without contacting the registry', async () => {
     const { slot, integrity, hashes } = seedSlot()
@@ -192,33 +224,42 @@ describe('loadFacetView — installed', () => {
     expect(await result.view.localPath('../secret')).toBeUndefined()
   })
 
-  test('a tampered slot is refused and left in place, without contacting the registry', async () => {
+  test('a tampered slot falls back to the registry at the locked version and is left in place', async () => {
     const { slot, integrity, hashes } = seedSlot()
     writeProject(integrity, hashes)
     writeFileSync(join(slot, 'commands/cowsay.md'), '# tampered\n')
-    const seen = stubRegistry(() => json({}))
+    const seen = stubRegistry((path) =>
+      path.endsWith('/contents') ? json(contents(integrity)) : json(metadata(integrity)),
+    )
+
     const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'local-copy-unavailable', sourceKind: 'registry' } })
+    if (!result.ok) expect.unreachable()
+    expect(result.view.origin).toMatchObject({ kind: 'installed', from: 'registry' })
+    expect(result.view.details?.publisher).toBe('shaun')
+    expect(await result.view.readFile('commands/cowsay.md')).toEqual({ ok: true, kind: 'text', content: '# Cowsay\n' })
+    expect(await result.view.localPath('commands/cowsay.md')).toBeUndefined()
+    expect(seen).toEqual(['/v0/facets/cowsay/1.0.2', '/v0/facets/cowsay/1.0.2/contents'])
     expect(existsSync(slot)).toBe(true)
-    expect(seen).toEqual([])
   })
 
-  test('a missing slot is reported as no usable local copy', async () => {
+  test('a missing slot falls back to the registry', async () => {
     const { slot, integrity, hashes } = seedSlot()
     writeProject(integrity, hashes)
     rmSync(slot, { recursive: true, force: true })
-    const seen = stubRegistry(() => json({}))
+    stubRegistry(() => json(metadata(integrity)))
     const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'local-copy-unavailable', sourceKind: 'registry' } })
-    expect(seen).toEqual([])
+    if (!result.ok) expect.unreachable()
+    expect(result.view.origin).toMatchObject({ from: 'registry' })
   })
 
-  test('a slot whose integrity differs from the lockfile is refused', async () => {
-    const { integrity, hashes } = seedSlot()
-    writeProject(`sha256:${'9'.repeat(64)}`, hashes)
-    expect(integrity).not.toBe(`sha256:${'9'.repeat(64)}`)
+  test('registry content that does not match the lockfile is refused', async () => {
+    const { slot, integrity, hashes } = seedSlot()
+    writeProject(integrity, hashes)
+    rmSync(slot, { recursive: true, force: true })
+    const other = `sha256:${'9'.repeat(64)}`
+    stubRegistry(() => json(metadata(other)))
     const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'local-copy-unavailable', sourceKind: 'registry' } })
+    expect(result).toEqual({ ok: false, failure: { code: 'integrity-mismatch', expected: integrity, observed: other } })
   })
 
   test('a git facet with no cached copy reports that no local copy is usable', async () => {
@@ -296,36 +337,52 @@ describe('loadFacetView — installed', () => {
 })
 
 describe('loadFacetView — not installed', () => {
-  test('a facet the project does not declare is reported without contacting the registry', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
-    const seen = stubRegistry(() => json({}))
+  test('reads the latest version from the registry and fetches files only on demand', async () => {
+    const latest = `sha256:${'4'.repeat(64)}`
+    const seen = stubRegistry((path) =>
+      path.endsWith('/contents') ? json(contents(latest, '1.1.0')) : json(metadata(latest, '1.1.0')),
+    )
     const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'not-installed' } })
-    expect(seen).toEqual([])
+    if (!result.ok) expect.unreachable()
+    expect(result.view.origin).toEqual({ kind: 'registry-latest' })
+    expect(result.view.version).toBe('1.1.0')
+    expect(result.view.disposition('command', 'cowsay')).toEqual({ kind: 'authored' })
+    expect(seen).toEqual(['/v0/facets/cowsay/latest'])
+
+    expect(await result.view.readFile('facet.json')).toEqual({
+      ok: true,
+      kind: 'text',
+      content: JSON.stringify({ ...MANIFEST, version: '1.1.0' }),
+    })
+    expect(seen).toEqual(['/v0/facets/cowsay/latest'])
+
+    expect(await result.view.readFile('README.md')).toEqual({ ok: true, kind: 'text', content: '# Cowsay\n' })
+    expect(seen).toEqual(['/v0/facets/cowsay/latest', '/v0/facets/cowsay/1.1.0/contents'])
   })
 
-  test('a declared facet with no lock entry is reported as not installed', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { cowsay: '1.0.2' } }))
+  test('an unknown facet surfaces the registry not-found', async () => {
+    stubRegistry(() => json({ code: 'E_FACET_NOT_FOUND', error: 'not found', fix: 'search' }, 404))
     const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'not-installed' } })
-  })
-
-  test('outside a project the facet is reported as not installed', async () => {
-    const result = await loadFacetView(projectRoot, 'cowsay')
-    expect(result).toEqual({ ok: false, failure: { code: 'not-installed' } })
+    expect(result).toEqual({
+      ok: false,
+      failure: { code: 'registry', error: { code: 'NOT_FOUND', name: 'cowsay', spec: 'latest' } },
+    })
   })
 
   test.each([
     'constructor',
     '__proto__',
     'toString',
-  ])('a name inherited from Object.prototype (%s) is reported as not installed', async (name) => {
-    const outside = await loadFacetView(projectRoot, name)
-    expect(outside).toEqual({ ok: false, failure: { code: 'not-installed' } })
+  ])('a name inherited from Object.prototype (%s) is looked up in the registry, not read as installed', async (name) => {
+    stubRegistry(() => json({ code: 'E_FACET_NOT_FOUND', error: 'not found', fix: 'search' }, 404))
+    const notFound = {
+      ok: false,
+      failure: { code: 'registry', error: { code: 'NOT_FOUND', name, spec: 'latest' } },
+    } as const
+    expect(await loadFacetView(projectRoot, name)).toEqual(notFound)
     const { integrity, hashes } = seedSlot()
     writeProject(integrity, hashes)
-    const inside = await loadFacetView(projectRoot, name)
-    expect(inside).toEqual({ ok: false, failure: { code: 'not-installed' } })
+    expect(await loadFacetView(projectRoot, name)).toEqual(notFound)
   })
 })
 

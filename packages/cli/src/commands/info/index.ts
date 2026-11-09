@@ -12,8 +12,12 @@ import { facetWebLink } from './web-link.ts'
 const DEFAULT_WIDTH = 80
 
 /**
- * `facet info <name>` — a summary of an installed facet, read from its
- * verified local copy without contacting the registry.
+ * `facet info <name>` — a summary of one facet.
+ *
+ * An installed facet is described from its verified local copy without
+ * contacting the registry. Any other facet is described from the
+ * registry's latest version, which is the only way to see it before
+ * installing.
  */
 export const infoCommand: Command = {
   name: 'info',
@@ -45,6 +49,9 @@ export const infoCommand: Command = {
 
     const input: FormatInfoInput = {
       view,
+      ...(view.details !== undefined
+        ? { identity: { owner: view.details.owner, publisher: view.details.publisher } }
+        : {}),
       binarySizes: await binarySizesOf(view),
       ...(web.kind === 'link' ? { webUrl: web.url } : {}),
     }
@@ -62,9 +69,14 @@ export const infoCommand: Command = {
   },
 }
 
-/** Sizes of declared non-primary files that are binary, read from the local copy. */
+/**
+ * Sizes of declared non-primary files that are binary, for a view backed
+ * by local bytes. A registry-backed view is not inspected: telling binary
+ * from text there would mean downloading every file just to draw hints.
+ */
 async function binarySizesOf(view: FacetView): Promise<Map<string, number>> {
   const sizes = new Map<string, number>()
+  if (view.origin.kind !== 'installed' || view.origin.from === 'registry') return sizes
   for (const file of declaredFiles(view.manifest)) {
     if (file.kind === 'primary' || file.kind === 'manifest') continue
     const read = await view.readFile(file.path)

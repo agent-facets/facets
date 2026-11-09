@@ -1,5 +1,6 @@
 import { type LoadFacetViewFailure, manifestLoadFailure } from '@agent-facets/engine'
 import type { CliError } from '../../util/errors.ts'
+import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 import { safeText, shellQuote } from '../../util/terminal-safe.ts'
 import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
 
@@ -25,12 +26,11 @@ export function facetViewError(projectRoot: string, requested: string, failure: 
     }
     case 'lockfile-unreadable':
       return { what: 'facets.lock could not be read', detail: failure.error, fix: 'run: facet install' }
-    case 'not-installed':
-      return {
-        what: `"${name}" is not installed in this project`,
-        detail: 'facet info and facet cat read the installed copy',
-        fix: `run: facet add ${safeText(shellQuote(requested))}`,
+    case 'registry':
+      if (failure.error.code === 'NOT_FOUND') {
+        return { what: `facet "${name}" not found`, fix: `run: facet search ${safeText(shellQuote(requested))}` }
       }
+      return translateEngineRegistryError(failure.error)
     case 'manifest-invalid':
       return {
         what: `the published manifest for "${name}" is invalid`,
@@ -40,6 +40,12 @@ export function facetViewError(projectRoot: string, requested: string, failure: 
     case 'name-mismatch':
       return {
         what: `the manifest for "${name}" names a different facet ("${safeText(failure.manifestName)}")`,
+        fix: 'run: facet install',
+      }
+    case 'integrity-mismatch':
+      return {
+        what: `the registry's copy of "${name}" does not match facets.lock`,
+        detail: `expected ${failure.expected}, got ${failure.observed}`,
         fix: 'run: facet install',
       }
     case 'local-copy-unavailable':

@@ -136,6 +136,70 @@ describe('facet info — source line', () => {
     const { stdout } = await run(['cowsay'])
     expect(stdout.split('\n')[1]).toBe('Installed · read from its local source directory')
   })
+
+  test('an installed facet read from the registry says why and how to repair it', async () => {
+    loaderReturns({
+      ok: true,
+      view: {
+        ...fakeView(),
+        origin: { kind: 'installed', from: 'registry', sourceKind: 'registry', authored: '1.0.2' },
+      },
+    })
+    const { stdout } = await run(['cowsay'])
+    const lines = stdout.split('\n')
+    expect(lines[1]).toBe('Installed · read from the registry, because your local copy is missing or damaged')
+    expect(lines[2]).toBe('  run: facet install   to repair it')
+  })
+})
+
+describe('facet info — facet that is not installed', () => {
+  function latestView(owner: { kind: 'user'; username: string } | { kind: 'org'; slug: string }): FacetView {
+    return {
+      ...fakeView(),
+      version: '1.1.0',
+      origin: { kind: 'registry-latest' },
+      details: {
+        name: 'cowsay',
+        version: '1.1.0',
+        contentFingerprint: 'sha256:c',
+        author: 'Cow Co',
+        owner,
+        publisher: 'julian',
+        publishedAt: '2026-11-01T00:00:00.000Z',
+        manifestJson: '{}',
+      },
+      disposition: () => ({ kind: 'authored' }),
+      localPath: async () => undefined,
+    }
+  }
+
+  test('shows the latest version, the verified publisher, and how to install it', async () => {
+    loaderReturns({ ok: true, view: latestView({ kind: 'user', username: 'julian' }) })
+    const { code, stdout, stderr } = await run(['cowsay'])
+    expect(code).toBe(0)
+    expect(stderr).toBe('')
+    const lines = stdout.split('\n')
+    expect(lines[0]).toBe('cowsay  v1.1.0 · by "Cow Co" · published by @julian')
+    expect(lines[1]).toBe('Not installed · read from the registry (latest published version)')
+    expect(stdout).toContain('INSTALL: facet add cowsay')
+    expect(stdout).not.toContain('Check for updates')
+    expect(stdout).toContain('WEB: https://agentfacets.io/facets/cowsay')
+  })
+
+  test('an organization owner leads the verified segment', async () => {
+    loaderReturns({ ok: true, view: latestView({ kind: 'org', slug: 'acme' }) })
+    const { stdout } = await run(['cowsay'])
+    expect(stdout.split('\n')[0]).toContain('@acme, published by @julian')
+  })
+
+  test('has no status column and hints every file, binary or not', async () => {
+    loaderReturns({ ok: true, view: latestView({ kind: 'user', username: 'julian' }) })
+    const { stdout } = await run(['cowsay'])
+    expect(stdout).not.toContain('installed as')
+    expect(stdout).not.toContain('omitted')
+    expect(stdout).toContain('+ facet cat cowsay skills/cowsay-rules/assets/logo.png')
+    expect(stdout).not.toContain('binary')
+  })
 })
 
 describe('facet info — terminal safety', () => {
@@ -261,13 +325,16 @@ describe('facet info — errors', () => {
     expect(stderr).toContain('facet info <name>')
   })
 
-  test('a facet that is not installed points to facet add', async () => {
-    loaderReturns({ ok: false, failure: { code: 'not-installed' } })
+  test('a facet the registry does not have points to facet search', async () => {
+    loaderReturns({
+      ok: false,
+      failure: { code: 'registry', error: { code: 'NOT_FOUND', name: 'mobbin', spec: 'latest' } },
+    })
     const { code, stdout, stderr } = await run(['mobbin'])
     expect(code).toBe(1)
     expect(stdout).toBe('')
-    expect(stderr).toContain('"mobbin" is not installed')
-    expect(stderr).toContain('facet add mobbin')
+    expect(stderr).toContain('facet "mobbin" not found')
+    expect(stderr).toContain('facet search mobbin')
   })
 
   test('a missing local copy points to facet install', async () => {
