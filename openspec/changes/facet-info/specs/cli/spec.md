@@ -68,7 +68,7 @@ The `facet info` summary SHALL list the facet's supplementary files. Each skill'
 
 ### Requirement: Info shows how to print each asset and file
 
-For each skill, command, agent, and supplementary file in the `facet info` summary, the system SHALL print the exact `facet cat` command that prints its content. The printed command SHALL work when the user copies and runs it. MCP servers SHALL NOT have a `facet cat` command. When the summary is read from the local copy, a binary supplementary file SHALL show its size in place of a command.
+For each skill, command, agent, and supplementary file in the `facet info` summary, the system SHALL print the exact `facet cat` command that prints its content. The printed command SHALL work when the user copies and runs it. MCP servers SHALL NOT have a `facet cat` command. When the summary is read from the local copy, a binary supplementary file SHALL show its size in place of a command. When the summary is read from the registry, files are not downloaded, so every declared file SHALL show a command and `facet cat` SHALL report a binary file when one is selected.
 
 #### Scenario: Print hint for a skill
 
@@ -90,7 +90,7 @@ For each skill, command, agent, and supplementary file in the `facet info` summa
 
 ### Requirement: Info reads the installed copy when the facet is installed
 
-When the current project declares the facet in `facets.json` and records it in `facets.lock`, `facet info` SHALL show the version recorded in `facets.lock` and SHALL mark the summary as installed. The summary SHALL describe the content of that installed version, not the latest published version. When the facet is not declared in the current project, or the command runs outside a project, `facet info` SHALL write an error to stderr that says the facet is not installed and gives the `facet add <name>` command. When no verified local copy of the installed version is available, it SHALL write an error that gives the `facet install` command. In both cases the process SHALL exit with code 1.
+When the current project declares the facet in `facets.json` and records it in `facets.lock`, `facet info` SHALL show the version recorded in `facets.lock` and SHALL mark the summary as installed. The summary SHALL describe the content of that installed version, not the latest published version. When the facet is not declared in the current project, or the command runs outside a project, `facet info` SHALL show the latest published version from the registry and SHALL print an `INSTALL:` line with the command that adds the facet to the project.
 
 #### Scenario: Installed facet shows the locked version
 
@@ -100,21 +100,12 @@ When the current project declares the facet in `facets.json` and records it in `
 - **THEN** the summary SHALL show version `1.0.1` and mark it as installed
 - **AND** the asset list SHALL match the manifest of `cowsay` `1.0.1`
 
-#### Scenario: Facet that is not installed
+#### Scenario: Facet that is not installed is read from the registry
 
 - **WHEN** the project does not declare `mobbin`
 - **AND** a user runs `facet info mobbin`
-- **THEN** stderr SHALL say that `mobbin` is not installed and SHALL contain `facet add mobbin`
-- **AND** stdout SHALL be empty
-- **AND** the process SHALL exit with code 1
-
-#### Scenario: Installed facet whose local copy is damaged
-
-- **WHEN** the project locks `cowsay` and its local copy fails its integrity check
-- **AND** a user runs `facet info cowsay`
-- **THEN** stderr SHALL contain `facet install`
-- **AND** the local copy SHALL be left as it is
-- **AND** the process SHALL exit with code 1
+- **THEN** the summary SHALL show the registry's latest `mobbin` version
+- **AND** stdout SHALL contain a line that starts with `INSTALL:` and contains `facet add mobbin`
 
 ### Requirement: Info shows how the project materialized each asset
 
@@ -145,9 +136,22 @@ For an installed facet, `facet info` SHALL print a line that starts with `Check 
 - **THEN** stdout SHALL contain a line that starts with `Check for updates:` and contains `facet outdated`
 - **AND** stdout SHALL NOT contain `UPDATE AVAILABLE`
 
+### Requirement: Info reports an unknown facet
+
+When the facet is not installed in the project and the registry has no facet with that name that the user can see, `facet info` SHALL write an error to stderr that names the facet and suggests `facet search`. The process SHALL exit with code 1.
+
+#### Scenario: Unknown facet name
+
+- **WHEN** a user runs `facet info no-such-facet`
+- **AND** the project does not declare `no-such-facet`
+- **AND** the registry returns not found for `no-such-facet`
+- **THEN** stderr SHALL contain `no-such-facet`
+- **AND** stderr SHALL contain `facet search`
+- **AND** the process SHALL exit with code 1
+
 ### Requirement: Cat command prints one asset or file
 
-The system SHALL register a `cat` command that takes a facet name and a selector, and writes the full content of the selected skill, command, agent, or text supplementary file to stdout. For a skill, the content SHALL be the skill's `SKILL.md`. When stdout is not a terminal, stdout SHALL contain the content and nothing else, byte for byte. When stdout is a terminal, the content SHALL be rendered as the safe-terminal-output requirement describes. The command SHALL read from the same verified local copy `facet info` uses, and SHALL fail as `facet info` does when the facet is not installed or has no verified local copy. The command SHALL NOT modify the project.
+The system SHALL register a `cat` command that takes a facet name and a selector, and writes the full content of the selected skill, command, agent, or text supplementary file to stdout. For a skill, the content SHALL be the skill's `SKILL.md`. When stdout is not a terminal, stdout SHALL contain the content and nothing else, byte for byte. When stdout is a terminal, the content SHALL be rendered as the safe-terminal-output requirement describes. The command SHALL read from the same source `facet info` would use for that facet: the installed version when the project declares the facet, and the latest published version from the registry otherwise. The command SHALL NOT modify the project.
 
 #### Scenario: Cat command is available in help
 
@@ -164,10 +168,8 @@ The system SHALL register a `cat` command that takes a facet name and a selector
 #### Scenario: Print an asset of a facet that is not installed
 
 - **WHEN** the project does not declare `mobbin`
-- **AND** a user runs `facet cat mobbin using-mobbin`
-- **THEN** stderr SHALL contain `facet add mobbin`
-- **AND** stdout SHALL be empty
-- **AND** the process SHALL exit with code 1
+- **AND** a user runs `facet cat mobbin using-mobbin` with stdout redirected to a file
+- **THEN** the file SHALL be byte-identical to `skills/using-mobbin/SKILL.md` of the registry's latest `mobbin` release
 
 #### Scenario: Print a README
 
@@ -380,9 +382,30 @@ When the project declares and locks a facet and its verified local copy is prese
 - **AND** stderr SHALL be empty
 - **AND** the process SHALL exit with code 0
 
-### Requirement: Info shows the facet's author
+### Requirement: Info shows the author and the verified publisher separately
 
-The `facet info` header SHALL show the facet's free-text `author` from its manifest when one is set, as `by "<author>"`, with any backslash or double quote in it escaped with a backslash. The author is written by the publisher and SHALL NOT be presented as a verified identity.
+The `facet info` header SHALL show the facet's free-text `author` from its manifest when one is set, as `by "<author>"`, with any backslash or double quote in it escaped with a backslash. When the summary is read from the registry, the header SHALL also show the verified Agent Facets identity that published the version shown, as `published by @<username>`, or `@<org>, published by @<username>` for an organization-owned facet. The author SHALL never appear in the position or the `@` form of the verified identity. A summary read from the local copy SHALL show only the author.
+
+#### Scenario: Facet read from the registry
+
+- **WHEN** the project does not declare `mobbin`
+- **AND** the registry reports `"author": "Julian Smith"`, publisher `julian`, and owner user `julian` for the latest version
+- **AND** a user runs `facet info mobbin`
+- **THEN** the header SHALL contain `by "Julian Smith"`
+- **AND** the header SHALL contain `published by @julian`
+
+#### Scenario: Organization-owned facet
+
+- **WHEN** the registry reports owner organization `acme` and publisher `julian` for the version shown
+- **AND** a user runs `facet info` for that facet
+- **THEN** the header SHALL contain `@acme, published by @julian`
+
+#### Scenario: Self-declared author that looks like an identity
+
+- **WHEN** a facet declares `"author": "@anthropic"` and the registry reports publisher `mallory`
+- **AND** a user runs `facet info` for that facet
+- **THEN** the header SHALL contain `by "@anthropic"`
+- **AND** the header SHALL contain `published by @mallory`
 
 #### Scenario: Author text that imitates a verified publisher
 
@@ -399,10 +422,24 @@ The `facet info` header SHALL show the facet's free-text `author` from its manif
 
 ### Requirement: Info states where the summary was read from
 
-Directly under the facet's name, `facet info` SHALL print a line that says the facet is installed and where the summary was read from: the local copy, or a local facet's source directory.
+Directly under the facet's name, `facet info` SHALL print a line that says whether the facet is installed and where the summary was read from: the local copy, a local facet's source directory, or the registry. When an installed facet's summary was read from the registry because its local copy is missing or damaged, the line SHALL say so and SHALL give the `facet install` command that repairs it.
 
 #### Scenario: Installed facet read from the local copy
 
 - **WHEN** the project locks `cowsay` and its verified local copy is present
 - **AND** a user runs `facet info cowsay`
 - **THEN** the second line of stdout SHALL be `Installed · read from your local copy`
+
+#### Scenario: Facet that is not installed
+
+- **WHEN** the project does not declare `mobbin`
+- **AND** a user runs `facet info mobbin`
+- **THEN** the second line of stdout SHALL say that `mobbin` is not installed and is read from the registry's latest published version
+
+#### Scenario: Installed facet whose local copy is damaged
+
+- **WHEN** the project locks `cowsay` and its local copy fails its integrity check
+- **AND** the registry has the locked version
+- **AND** a user runs `facet info cowsay`
+- **THEN** stdout SHALL say that `cowsay` is installed and was read from the registry because the local copy is missing or damaged
+- **AND** stdout SHALL contain `facet install`

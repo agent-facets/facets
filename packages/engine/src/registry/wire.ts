@@ -23,6 +23,14 @@ import type { components } from './generated/registry-api.ts'
 export type WireMetadataResponse = components['schemas']['VersionMetadata']
 
 /**
+ * `GET /v0/facets/{name}/{version}/contents` — every verified file of a
+ * version except the manifest. Text files carry decoded UTF-8 content;
+ * binary files carry only their hash and size.
+ */
+export type WireContentsResponse = components['schemas']['ContentsResponse']
+export type WireContentsFile = WireContentsResponse['files'][number]
+
+/**
  * Wire shape returned by `GET /v0/facets` (search/listing). Top
  * level is `{ facets: WirePackageListItem[] }`.
  */

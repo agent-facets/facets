@@ -16,8 +16,9 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 const realModule: typeof import('../resolve-metadata.ts') = await import(
   new URL('../resolve-metadata.ts?consumer-contract', import.meta.url).href
 )
-const { MAX_REGISTRY_METADATA_SPECIFIERS, metadataFromWire } = realModule
+const { MAX_REGISTRY_METADATA_SPECIFIERS } = realModule
 
+import { metadataFromWire } from '../metadata-wire.ts'
 import type { RegistrySpec } from '../types.ts'
 
 const VALID = {

@@ -9,7 +9,7 @@ description: Print one asset or file from a facet
 facet cat <name> <asset-or-path>
 ```
 
-Prints the content of one skill, command, agent, or declared file of a facet installed in the current project, exactly as installed. It reads the same verified local copy as [`facet info`](/cli/info), whose output lists the `facet cat` command for every printable file.
+Prints the content of one skill, command, agent, or declared file of a facet, exactly as published. It reads the same source as [`facet info`](/cli/info): the verified local copy for an installed facet, and the registry's latest version for any other. `facet info` lists the `facet cat` command for every printable file.
 
 ## Selecting a file
 
@@ -36,7 +36,7 @@ $EDITOR "$(facet cat --path cowsay README.md)" # open the installed file in your
 ## Flags
 
 <ResponseField name="--path" type="boolean">
-  Print the location of the file on this machine instead of its content. The file is not opened.
+  Print the location of the file on this machine instead of its content. The file is not opened. Only an installed facet has local files.
 </ResponseField>
 
 ## Exit codes
@@ -44,12 +44,14 @@ $EDITOR "$(facet cat --path cowsay README.md)" # open the installed file in your
 | Code | Meaning |
 | --- | --- |
 | `0` | The file, or its path, was printed. |
-| `1` | The facet is not installed, its local copy is missing or does not match `facets.lock`, the selector matched nothing or more than one asset, it named an MCP server, or the file is binary. |
+| `1` | The facet was not found, the registry could not be reached or its copy did not match, the selector matched nothing or more than one asset, it named an MCP server, or the file is binary. |
 | `2` | An unexpected error escaped command handling. |
 
 ## Output
 
 On a terminal, control characters and invisible or direction-changing Unicode, including tag characters, are shown as visible escapes (`^[`, `<U+202E>`, `<U+E0041>`), and a note on stderr says how many. Redirected or piped, the file's bytes are written unchanged.
+
+When the file came from the registry rather than this machine, a note on stderr says so on a terminal: `note: from the registry: mobbin v1.0.0 (not installed)`.
 
 Errors go to stderr, so stdout only ever holds the file.
 
