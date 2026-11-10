@@ -1,8 +1,10 @@
 import { adapterCommand } from './commands/adapter/index.ts'
 import { addCommand } from './commands/add/index.ts'
 import { buildCommand } from './commands/build.ts'
+import { catCommand } from './commands/cat/index.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
+import { infoCommand } from './commands/info/index.ts'
 import { installCommand } from './commands/install/index.ts'
 import { instructionsCommand } from './commands/instructions/index.ts'
 import { listCommand } from './commands/list/index.ts'
@@ -149,25 +151,14 @@ export type Command = {
   run: (args: string[], flags: Record<string, unknown>) => Promise<number>
 }
 
-function stubCommand(name: string, description: string): Command {
-  return {
-    name,
-    description,
-    implemented: false,
-    run: async (_args, _flags) => {
-      console.log(`"${name}" is not yet implemented.`)
-      return 0
-    },
-  }
-}
-
 export const commands: Record<string, Command> = {
   adapter: adapterCommand,
   add: addCommand,
   build: buildCommand,
+  cat: catCommand,
   create: createCommand,
   edit: editCommand,
-  info: stubCommand('info', 'Show information about a facet'),
+  info: infoCommand,
   install: installCommand,
   instructions: instructionsCommand,
   list: listCommand,

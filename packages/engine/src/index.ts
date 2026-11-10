@@ -161,6 +161,17 @@ export {
   mergeRollbackOutcomes,
   NO_ROLLBACK,
 } from './fs/index.ts'
+// inspect: what `facet info` and `facet cat` show for one facet
+export type {
+  FacetFileRead,
+  FacetView,
+  FacetViewOrigin,
+  LoadFacetViewFailure,
+  LoadFacetViewResult,
+} from './inspect/facet-view.ts'
+export { loadFacetView } from './inspect/facet-view.ts'
+export type { DeclaredFile, InspectAssetType, SelectorResolution } from './inspect/selector.ts'
+export { declaredFiles, resolveSelector, selectorFor } from './inspect/selector.ts'
 export type {
   AssetTakeoverDecision,
   AssetTakeoverRequest,
