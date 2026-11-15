@@ -114,3 +114,23 @@ describe('writeCliError', () => {
     expect(chunks.join('')).toMatch(/\n$/)
   })
 })
+
+describe('formatCliError — terminal safety', () => {
+  test('control sequences in any field are made visible, never written as bytes', () => {
+    const out = formatCliError({
+      what: 'bad \u001b]0;title\u0007 name',
+      detail: 'member "x\u001b[2J"',
+      fix: `run: ${String.fromCodePoint(0x202e)}evil`,
+      docsUrl: 'https://docs.test/\u0007',
+    })
+    for (const code of [0x07, 0x1b, 0x202e]) expect(out).not.toContain(String.fromCodePoint(code))
+    expect(out).toContain('bad ^[]0;title^G name')
+    expect(out).toContain('member "x^[[2J"')
+    expect(out).toContain('<U+202E>evil')
+  })
+
+  test('already-escaped text is unchanged', () => {
+    const escaped = 'x^[[2J <U+202E>'
+    expect(formatCliError({ what: escaped, detail: escaped, fix: escaped })).toContain(`  ${escaped}`)
+  })
+})

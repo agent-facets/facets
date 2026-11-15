@@ -10,7 +10,15 @@ import { printCommandHelp, printGlobalHelp } from './help.ts'
 import { findClosestCommand } from './suggest.ts'
 import { version } from './version.ts'
 
-export async function run(argv: string[], commands: Record<string, Command>): Promise<number> {
+export async function run(fullArgv: string[], commands: Record<string, Command>): Promise<number> {
+  // Everything after the first `--` is positional, even when it looks like a
+  // flag (`facet cat cowsay -- --help` selects a file named `--help`). The
+  // parser has no notion of `--`, so the split happens here, before any
+  // parsing, and the operands are appended to the command's positionals.
+  const separator = fullArgv.indexOf('--')
+  const argv = separator === -1 ? fullArgv : fullArgv.slice(0, separator)
+  const operands = separator === -1 ? [] : fullArgv.slice(separator + 1)
+
   const args = parse(argv, {
     boolean: ['help', 'version'],
   })
@@ -122,7 +130,7 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
   })
 
   // Build positional args and flags
-  const positionalArgs = parsed._.map(String)
+  const positionalArgs = [...parsed._.map(String), ...operands]
   const flags: Record<string, unknown> = {}
 
   for (const name of scalarNames) {

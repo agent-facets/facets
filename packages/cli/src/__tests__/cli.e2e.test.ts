@@ -10,8 +10,10 @@ const IMPLEMENTED_COMMAND_NAMES = [
   'adapter',
   'add',
   'build',
+  'cat',
   'create',
   'edit',
+  'info',
   'install',
   'list',
   'login',
@@ -23,20 +25,13 @@ const IMPLEMENTED_COMMAND_NAMES = [
   'update',
   'whoami',
 ]
-// Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
-// the global help listing (Adjustment K).
-//
-// `upgrade` used to be one of these. It is now an alias of `update`, which
-// is why it no longer appears here: it is not a hidden command, it is a
-// second spelling of a listed one.
-const STUB_COMMAND_NAMES = ['info']
 
 const runCli = (...args: string[]) => spawnCli(args)
 
 // --- Help ---
 
 describe('CLI — help', () => {
-  test('--help lists implemented commands and hides stubs', async () => {
+  test('--help lists implemented commands', async () => {
     const result = await runCli('--help')
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Usage: facet <command>')
@@ -46,9 +41,6 @@ describe('CLI — help', () => {
     // (when aliases follow, e.g., "  self-update, self-upgrade  …").
     for (const cmd of IMPLEMENTED_COMMAND_NAMES) {
       expect(result.stdout).toMatch(new RegExp(`^\\s+${cmd}[,\\s]`, 'm'))
-    }
-    for (const cmd of STUB_COMMAND_NAMES) {
-      expect(result.stdout).not.toMatch(new RegExp(`^\\s+${cmd}[,\\s]`, 'm'))
     }
     expect(result.stderr).toBe('')
   })
@@ -83,18 +75,6 @@ describe('CLI — bare invocation', () => {
     expect(bareResult.exitCode).toBe(0)
     expect(bareResult.stdout).toBe(helpResult.stdout)
     expect(bareResult.stderr).toBe('')
-  })
-})
-
-// --- Stub commands ---
-
-describe('CLI — stub commands', () => {
-  test.each(STUB_COMMAND_NAMES)('"%s" prints not yet implemented with command name and exits 0', async (cmd) => {
-    const result = await runCli(cmd)
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain(cmd)
-    expect(result.stdout).toContain('not yet implemented')
-    expect(result.stderr).toBe('')
   })
 })
 

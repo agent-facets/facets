@@ -55,6 +55,15 @@ describe('loadManifest', () => {
     }
   })
 
+  test.skipIf(process.platform === 'win32')('a FIFO named facet.json is refused without blocking', async () => {
+    const dir = await createFixtureDir('fifo')
+    const made = Bun.spawnSync(['mkfifo', join(dir, 'facet.json')])
+    expect(made.exitCode).toBe(0)
+    const result = await loadManifest(dir)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors[0]?.message).toContain('Not a regular file')
+  })
+
   test('file not found', async () => {
     const dir = await createFixtureDir('missing')
 

@@ -1,4 +1,5 @@
 import { hexToRgb, THEME } from '@agent-facets/brand'
+import { safeText } from './terminal-safe.ts'
 
 /**
  * Single entry point for user-visible error output from add/install/picker
@@ -40,15 +41,21 @@ export interface CliError {
  * Format a CliError as the canonical stderr block. Three lines normally;
  * four when `docsUrl` is provided. Exposed for tests and for callers that
  * want to control writing (e.g., Ink cleanup paths that write after unmount).
+ *
+ * Every field is made terminal-safe here, once, for every command: error
+ * text routinely quotes files the user did not write (a cloned
+ * `facets.json`, registry responses), and a control sequence in it must
+ * never reach the terminal as bytes. Escaping is idempotent, so callers that
+ * already escaped a value are unaffected.
  */
 export function formatCliError(err: CliError): string {
-  const detail = err.detail && err.detail.length > 0 ? err.detail : '(no detail)'
+  const detail = err.detail && err.detail.length > 0 ? safeText(err.detail) : '(no detail)'
   const errorLabel = colorize('error:', THEME.warning)
   const fixLabel = colorize('fix:', THEME.warning)
-  const lines = [`${errorLabel} ${err.what}`, `  ${detail}`, `  ${fixLabel} ${err.fix}`]
+  const lines = [`${errorLabel} ${safeText(err.what)}`, `  ${detail}`, `  ${fixLabel} ${safeText(err.fix)}`]
   if (err.docsUrl !== undefined && err.docsUrl.length > 0) {
     const docsLabel = colorize('docs:', THEME.warning)
-    lines.push(`  ${docsLabel} ${err.docsUrl}`)
+    lines.push(`  ${docsLabel} ${safeText(err.docsUrl)}`)
   }
   return lines.join('\n')
 }
