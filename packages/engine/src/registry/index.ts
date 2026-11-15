@@ -8,6 +8,8 @@ export {
 export { fetchAuthMe } from './auth.ts'
 export type { RegistryClientConfig } from './client.ts'
 export { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
+export type { RegistryContentsFile, RegistryVersionContents } from './contents.ts'
+export { fetchRegistryVersionContents } from './contents.ts'
 export type { ResolvedCredential } from './credentials.ts'
 export {
   readCredentialsToken,
@@ -34,6 +36,8 @@ export type { PublishArgs, PublishResult } from './publish.ts'
 export { publishFacetVersion } from './publish.ts'
 export { MAX_REGISTRY_METADATA_SPECIFIERS, resolveRegistryMetadataBatch } from './resolve-metadata.ts'
 export type { RegistryError, RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
+export type { RegistryOwner, RegistryVersionDetails } from './version-details.ts'
+export { fetchRegistryVersionDetails } from './version-details.ts'
 export type {
   WireAssetCounts,
   WireAuthMeResponse,
