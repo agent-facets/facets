@@ -1,0 +1,5 @@
+# Release jobs mint npm OIDC tokens with CircleCI's in-job environment CLI.
+# The pinned local CircleCI CLI in mise.toml shares its `circleci` name but not
+# its `run oidc` command, so it must not shadow the environment CLI here.
+[settings]
+disable_tools = ["github:CircleCI-Public/circleci-cli"]
