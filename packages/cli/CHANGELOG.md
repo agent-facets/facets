@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.37.1
+
+### Patch Changes
+
+- [#628](https://github.com/agent-facets/facets/pull/628) [`f224f38`](https://github.com/agent-facets/facets/commit/f224f38cdf8f95355dccd198d37de72ffafb4dc3) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Release the changes listed under 0.37.0, which never reached npm because its release failed. This version has no other changes.
+
 ## 0.37.0
 
 ### Minor Changes
@@ -10,7 +16,7 @@
 ### Patch Changes
 
 - [#624](https://github.com/agent-facets/facets/pull/624) [`25bbf72`](https://github.com/agent-facets/facets/commit/25bbf7255187f765aca218e8f400bb1e2d0b2b7d) Thanks [@shaundreamsincode](https://github.com/shaundreamsincode)! - Arguments after `--` are now always treated as positional, so a file whose name starts with `-` can be selected (`facet cat <name> -- --help`). Loading a facet's `facet.json` now refuses anything that is not a regular file, such as a named pipe, instead of waiting on it.
-    Error messages from every command now show terminal control characters as visible escapes. Before, a crafted `facets.json` could send escape sequences to the terminal through the error that `facet list`, `facet outdated`, and `facet update` print for it.
+  Error messages from every command now show terminal control characters as visible escapes. Before, a crafted `facets.json` could send escape sequences to the terminal through the error that `facet list`, `facet outdated`, and `facet update` print for it.
 
 ## 0.36.5
 
