@@ -1,6 +1,45 @@
 import type { Command, FlagDef } from './commands.ts'
 import { version } from './version.ts'
 
+const JSON_OPTION = { name: 'json', type: 'boolean', description: 'Emit machine-readable JSON' } as const
+
+/** Machine-readable help comes from the same registry as terminal help. */
+export function globalHelpData(commands: Record<string, Command>) {
+  const entries = [...new Set(Object.values(commands))].filter((command) => command.implemented !== false)
+  return {
+    version,
+    usage: 'facet <command> [options]',
+    commands: entries.map(({ name, description, aliases }) => ({ name, description, aliases: aliases ?? [] })),
+    options: [
+      { name: 'help', type: 'boolean', description: 'Show help' },
+      { name: 'version', type: 'boolean', description: 'Show version' },
+      JSON_OPTION,
+    ],
+  }
+}
+
+export function commandHelpData(command: Command) {
+  const options = Object.entries(command.flags ?? {})
+    .filter(([name]) => name !== 'json')
+    .map(([name, def]) => ({ name, ...def }))
+  return {
+    name: command.name,
+    description: command.description,
+    usage: `facet ${command.name}${command.usage ? ` ${command.usage}` : ''} [options]`,
+    aliases: command.aliases ?? [],
+    options: [...options, { name: 'help', type: 'boolean', description: 'Show help' }, JSON_OPTION],
+    ...(command.name === 'adapter'
+      ? {
+          subcommands: [
+            { name: 'add', usage: '<specifier>', description: 'Install an adapter', aliases: ['install'] },
+            { name: 'list', usage: '', description: 'List installed adapters', aliases: [] },
+            { name: 'remove', usage: '<name>', description: 'Remove an installed adapter', aliases: [] },
+          ],
+        }
+      : {}),
+  }
+}
+
 /**
  * Render a command's listing label in global help: canonical name plus
  * any aliases, comma-joined. `self-update, self-upgrade` rather than two
@@ -52,6 +91,7 @@ export function printGlobalHelp(commands: Record<string, Command>): void {
     'Options:',
     '  --help       Show help',
     '  --version    Show version',
+    '  --json       Emit machine-readable JSON',
   ]
 
   console.log(lines.join('\n'))
@@ -67,6 +107,7 @@ export function printCommandHelp(command: Command): void {
       label: flagLabel(name, def),
       description: def.description,
     }))
+    if (!('json' in command.flags)) rows.push({ label: '--json', description: 'Emit machine-readable JSON' })
     rows.push({ label: '--help', description: 'Show help' })
 
     const maxFlagLength = Math.max(...rows.map((row) => row.label.length))
@@ -74,7 +115,7 @@ export function printCommandHelp(command: Command): void {
       lines.push(`  ${row.label.padEnd(maxFlagLength + 4)}${row.description}`)
     }
   } else {
-    lines.push('  --help    Show help')
+    lines.push('  --json    Emit machine-readable JSON', '  --help    Show help')
   }
 
   console.log(lines.join('\n'))

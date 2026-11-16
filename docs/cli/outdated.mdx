@@ -49,8 +49,10 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
 
 ```json expandable
 {
-  "schemaVersion": "1",
+  "schemaVersion": "3",
+  "command": "outdated",
   "ok": true,
+  "data": {
   "applied": false,
   "facets": [
     {
@@ -64,6 +66,8 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
     }
   ],
   "counts": { "updated": 0, "current": 0, "held": 1, "unsupported": 0 }
+  },
+  "warnings": []
 }
 ```
 

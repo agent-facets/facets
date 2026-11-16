@@ -10,6 +10,20 @@ export const logoutCommand: Command = {
   flags: {
     local: { type: 'boolean', description: 'Remove the local browser session without confirmed remote revocation' },
   },
+  runJson: async (args, flags) => {
+    if (args.length > 0 || Object.keys(flags).some((name) => name !== 'local' && name !== 'json')) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'invalid logout arguments' } }
+    }
+    const outcome = await logoutCliSession({ localOnly: flags.local === true })
+    if (!outcome.ok) {
+      const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: outcome.error })
+      return {
+        ok: false,
+        error: { code: 'AUTHENTICATION_ERROR', message: error.what, fix: error.fix, docsUrl: error.docsUrl },
+      }
+    }
+    return { ok: true, data: outcome.value }
+  },
   run: async (args, flags) => {
     if (
       args.length > 0 ||

@@ -38,6 +38,7 @@ import {
   readOAuthSessionForLocalCleanup,
   saveOAuthSession,
   type UncertainOAuthSession,
+  withOAuthAttemptLock,
   withOAuthSessionLock,
 } from '../oauth-store.ts'
 
@@ -69,6 +70,32 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(facetDir, { recursive: true, force: true })
+})
+
+describe('durable login attempts', () => {
+  const id = '0123456789abcdef0123456789abcdef'
+
+  test('writes and reads a private attempt', async () => {
+    const written = await withOAuthAttemptLock(binding, id, (store) => store.write({ state: 'pending' }), options)
+    expect(written.ok).toBe(true)
+    const file = join(facetDir, 'oauth', 'attempts', `${id}.json`)
+    expect(lstatSync(file).mode & 0o777).toBe(0o600)
+    const read = await withOAuthAttemptLock(binding, id, (store) => store.read(), options)
+    expect(read).toEqual({ ok: true, value: { state: 'pending' } })
+  })
+
+  test('rejects unsafe identifiers and symlinked attempt files', async () => {
+    const invalid = await withOAuthAttemptLock(binding, '../escape', async () => ok(undefined), options)
+    if (invalid.ok) expect.unreachable()
+    expect(invalid.error.code).toBe('INVALID_BINDING')
+    const setup = await withOAuthAttemptLock(binding, id, async () => ok(undefined), options)
+    expect(setup.ok).toBe(true)
+    const file = join(facetDir, 'oauth', 'attempts', `${id}.json`)
+    symlinkSync(join(facetDir, 'elsewhere'), file)
+    const read = await withOAuthAttemptLock(binding, id, (store) => store.read(), options)
+    if (read.ok) expect.unreachable()
+    expect(read.error.code).toBe('UNSAFE_STATE')
+  })
 })
 
 describe('platform support', () => {

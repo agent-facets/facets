@@ -9,6 +9,7 @@ import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
+import { adapterFailure, installJsonResult, jsonAdapters, withJsonAbort } from '../shared/install-json.ts'
 
 /**
  * `facet install` — bring the project on disk into agreement with
@@ -29,6 +30,31 @@ export const installCommand: Command = {
       type: 'boolean',
       description: 'Treat the lockfile as the source of truth; fail on any manifest/lockfile drift',
     },
+  },
+  runJson: async (args, flags) => {
+    if (args.length > 0) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_ARGUMENTS', message: 'install does not accept positional arguments' },
+      }
+    }
+    const { adapters, errors } = await jsonAdapters()
+    if (adapters === null) return adapterFailure(errors)
+    const frozen = flags['frozen-lockfile'] === true
+    const mcpConsent =
+      flags[ACCEPT_MCP_FLAG] === true ? { kind: 'preapproved' as const } : { kind: 'unavailable' as const }
+    const result = await withJsonAbort((signal) =>
+      runInstall({
+        projectRoot: process.cwd(),
+        adapters,
+        operation: frozen
+          ? { kind: 'reproduce', frozen: true, mcpConsent }
+          : { kind: 'reproduce', frozen: false, mcpConsent },
+        onStage: () => {},
+        signal,
+      }),
+    )
+    return installJsonResult(result, 'install')
   },
   run: async (args, flags) => {
     if (args.length > 0) {

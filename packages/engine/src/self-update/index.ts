@@ -16,6 +16,13 @@ export interface RunSelfUpdateOptions {
   targetVersion?: string
   /** Print the plan; do not modify any files. */
   dryRun: boolean
+  machine?: boolean
+  onResult?: (result: {
+    currentVersion: string
+    targetVersion: string
+    method: string
+    outcome: 'dry-run' | 'already-current' | 'updated' | 'manual-action-required'
+  }) => void
   /**
    * Optional callback for normal output (dry-run report, "already up to
    * date" message, post-install warnings). The CLI passes a callback that
@@ -59,6 +66,7 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
       dryRun: opts.dryRun,
       onOutput: opts.onOutput,
       onError: opts.onError,
+      machine: opts.machine,
     })
   }
 
@@ -83,12 +91,24 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
       kind: 'mise-guidance',
       reason: miseGuidance.reason,
     })
+    opts.onResult?.({
+      currentVersion: opts.currentVersion,
+      targetVersion: target,
+      method: detected,
+      outcome: 'manual-action-required',
+    })
     return 0
   }
 
   // Dry-run path: render the plan and exit. No filesystem side effects, no
   // subprocess, no exceptions for "already up to date" — just status.
   if (opts.dryRun) {
+    opts.onResult?.({
+      currentVersion: opts.currentVersion,
+      targetVersion: target,
+      method: handler.kind,
+      outcome: 'dry-run',
+    })
     const upToDate = opts.currentVersion === target
     opts.onOutput?.(
       `Current: ${opts.currentVersion}\n` +
@@ -105,15 +125,30 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
 
   // No-op path: target equals current. Don't spawn anything.
   if (opts.currentVersion === target) {
+    opts.onResult?.({
+      currentVersion: opts.currentVersion,
+      targetVersion: target,
+      method: handler.kind,
+      outcome: 'already-current',
+    })
     opts.onOutput?.(`facet is already up to date (${opts.currentVersion}).\n`)
     return 0
   }
 
   // Real update: dispatch to the method handler. Its exit code becomes ours.
-  return handler.update({
+  const exitCode = await handler.update({
     targetVersion: target,
     dryRun: false,
     onOutput: opts.onOutput,
     onError: opts.onError,
+    machine: opts.machine,
   })
+  if (exitCode === 0)
+    opts.onResult?.({
+      currentVersion: opts.currentVersion,
+      targetVersion: target,
+      method: handler.kind,
+      outcome: 'updated',
+    })
+  return exitCode
 }

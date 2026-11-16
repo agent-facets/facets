@@ -5,6 +5,6 @@ export const npmMethod: InstallMethod = {
   kind: 'npm',
   displayName: 'npm (global)',
   describe: ({ targetVersion }) => `npm install -g agent-facets@${targetVersion}`,
-  update: ({ targetVersion, onError }) =>
-    spawnInherit(['npm', 'install', '-g', `agent-facets@${targetVersion}`], { onError }),
+  update: ({ targetVersion, onError, machine }) =>
+    spawnInherit(['npm', 'install', '-g', `agent-facets@${targetVersion}`], { onError, machine }),
 }

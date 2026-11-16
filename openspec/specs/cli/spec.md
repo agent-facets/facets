@@ -1411,6 +1411,27 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 - **THEN** the command SHALL fail before mutation with the complete consent information
 - **AND** when `--accept-mcp` is supplied, the command SHALL proceed without prompting if the work is otherwise valid
 
+### Requirement: Commands provide non-interactive JSON output
+
+Every registered command, alias, adapter subcommand, help and version invocation SHALL accept `--json` before the end-of-options separator. JSON mode SHALL suppress interactive prompts, live displays, browser launches, and editors. It SHALL NOT imply consent or overwrite permission. The CLI SHALL emit exactly one JSON document to stdout on every handled outcome, with `schemaVersion: "3"`, canonical `command`, `ok`, `warnings`, and exactly one of `data` or `error`. Error objects SHALL carry a stable `code` and `message` and MAY include `details`, `fix`, and `docsUrl`. Unexpected handled failures SHALL report a sanitized error and exit 2. Uncatchable termination cannot guarantee a document.
+
+#### Scenario: JSON edit refuses an interactive workflow
+
+- **WHEN** a user runs `facet edit --json`
+- **THEN** the command SHALL NOT open an editor or prompt
+- **AND** the JSON error SHALL direct the user to `facet modify`
+
+#### Scenario: A JSON install needs consent
+
+- **WHEN** a user runs an install operation with `--json` and MCP configuration requires approval
+- **AND** the user has not supplied `--accept-mcp`
+- **THEN** the operation SHALL fail before mutation and report the consent information in its JSON error
+
+#### Scenario: A command alias identifies the canonical command
+
+- **WHEN** a user runs `facet rm --json`
+- **THEN** the JSON document SHALL identify its command as `remove`
+
 ### Requirement: Update emits machine-readable output on request
 
 The `update` command SHALL accept a `--json` flag. When `--json` is given, the system SHALL emit a single JSON document to stdout and SHALL emit no other output to stdout, on every outcome the command reaches.
@@ -1455,7 +1476,7 @@ Every JSON document the `update` command emits under `--json` SHALL carry a `sch
 
 ### Requirement: Machine-readable output reports whether the run wrote to the project
 
-An `update --json` document with `ok: true` SHALL carry an `applied` boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `applied` is `false`, when the run previewed a change without writing it.
+An `update --json` document with `ok: true` SHALL carry `data.applied`, a boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `data.applied` is `false`, when the run previewed a change without writing it.
 
 #### Scenario: A dry run reports applied false with facets it would update
 

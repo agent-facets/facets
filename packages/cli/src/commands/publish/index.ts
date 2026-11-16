@@ -49,6 +49,124 @@ export const publishCommand: Command = {
   description: 'Publish a facet to the registry',
   usage: '[directory]',
   implemented: true,
+  runJson: async (args) => {
+    if (args.length > 1) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'publish accepts at most one directory' } }
+    }
+    const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) return { ok: false, error: { code: 'INVALID_DIRECTORY', message: resolved.message } }
+    const credential = await resolveRegistryCredential()
+    if (!credential.ok) {
+      const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: credential.error })
+      return { ok: false, error: { code: 'AUTHENTICATION_ERROR', message: error.what, fix: error.fix } }
+    }
+    const original = credential.value
+    if (original.source === 'absent') {
+      return {
+        ok: false,
+        error: { code: 'NOT_SIGNED_IN', message: 'No registry credential found', fix: 'run facet login' },
+      }
+    }
+    const source = await loadManifest(resolved.dir)
+    if (!source.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_MANIFEST',
+          message: 'facet.json is invalid',
+          details: { issues: source.errors },
+          fix: 'fix facet.json and try again',
+        },
+      }
+    }
+    const discovery = await discoverBuiltArtifacts(resolved.dir)
+    if (discovery.state === 'none') {
+      return {
+        ok: false,
+        error: { code: 'ARTIFACT_NOT_FOUND', message: 'no built artifact in dist/', fix: 'run facet build first' },
+      }
+    }
+    if (discovery.state === 'multiple') {
+      return {
+        ok: false,
+        error: {
+          code: 'MULTIPLE_ARTIFACTS',
+          message: 'multiple built artifacts in dist/',
+          details: { paths: discovery.paths },
+          fix: 'run facet build or remove the extras',
+        },
+      }
+    }
+    const bytes = await readBytes(discovery.path)
+    const verified = await validateFacetArchive(bytes, { gunzip: uncappedGunzip })
+    if (!verified.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARTIFACT',
+          message: 'built artifact failed verification',
+          details: { message: describeVerificationFailure(verified.failure) },
+          fix: 'rebuild with facet build',
+        },
+      }
+    }
+    const manifest = verified.data.facetManifest
+    const drift = detectManifestDrift(source.data, manifest)
+    const warnings = drift.inSync
+      ? []
+      : [
+          {
+            code: 'ARTIFACT_DRIFT',
+            message: 'Publishing the existing artifact; source has changed.',
+            details: { reason: drift.reason },
+          },
+        ]
+    let uploadCredential = original
+    if (original.source === 'oauth') {
+      const renewed = await resolveRegistryCredential()
+      if (!renewed.ok) {
+        const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: renewed.error })
+        return { ok: false, error: { code: 'AUTHENTICATION_ERROR', message: error.what, fix: error.fix }, warnings }
+      }
+      const next = renewed.value
+      if (
+        next.source !== 'oauth' ||
+        next.registryOrigin !== original.registryOrigin ||
+        next.profile.user_uuid !== original.profile.user_uuid
+      ) {
+        return {
+          ok: false,
+          error: { code: 'SESSION_CHANGED', message: 'Registry session changed before publishing' },
+          warnings,
+        }
+      }
+      uploadCredential = next
+    }
+    const client = createRegistryClient(
+      uploadCredential.source === 'oauth'
+        ? { baseUrl: uploadCredential.registryOrigin, credential: uploadCredential.token, credentialPolicy: 'oauth' }
+        : { credential: uploadCredential.token },
+    )
+    const result = await publishFacetVersion(client, { name: manifest.name, tarball: bytes })
+    if (!result.ok) {
+      const error = translateEngineRegistryError(result.error)
+      return {
+        ok: false,
+        error: { code: result.error.code, message: error.what, fix: error.fix, docsUrl: error.docsUrl },
+        warnings,
+      }
+    }
+    return {
+      ok: true,
+      data: {
+        name: manifest.name,
+        version: manifest.version,
+        status: result.value.kind === 'queued' ? 'queued' : 'published',
+        ...(result.value.kind === 'queued' ? { fix: result.value.queued.fix } : {}),
+      },
+      warnings,
+    }
+  },
   run: async (args, _flags) => {
     // (a) Resolve target directory.
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })

@@ -53,7 +53,7 @@ describe('per-command help — short aliases', () => {
     })
     const rows = optionRows(out)
     // Four declared/implicit rows: three flags plus --help.
-    expect(rows.map((r) => r.label)).toEqual(['-L, --latest', '-i, --interactive', '--dry-run', '--help'])
+    expect(rows.map((r) => r.label)).toEqual(['-L, --latest', '-i, --interactive', '--dry-run', '--json', '--help'])
     const columns = new Set(rows.map((r) => r.descriptionColumn))
     expect(columns.size).toBe(1)
   })
@@ -64,7 +64,7 @@ describe('per-command help — short aliases', () => {
       name: { type: 'string', description: 'Facet name' },
     })
     const rows = optionRows(out)
-    expect(rows.map((r) => r.label)).toEqual(['--force', '--name', '--help'])
+    expect(rows.map((r) => r.label)).toEqual(['--force', '--name', '--json', '--help'])
     expect(new Set(rows.map((r) => r.descriptionColumn)).size).toBe(1)
     expect(out).not.toContain('-f,')
   })

@@ -1,6 +1,7 @@
 import {
   createRegistryClient,
   resolveRegistryCredential,
+  searchRegistry,
   translateThrownError,
   translateWireError,
 } from '@agent-facets/engine'
@@ -33,6 +34,46 @@ export const searchCommand: Command = {
   description: 'Search the registry for facets',
   usage: '[term]',
   implemented: true,
+  runJson: async (args) => {
+    if (args.length > 1) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'search accepts at most one argument' } }
+    }
+    const result = await searchRegistry(args[0])
+    if (!result.ok) {
+      if (result.error.code === 'INVALID_SEARCH_RESPONSE') {
+        return {
+          ok: false,
+          error: {
+            code: result.error.code,
+            message: 'Registry returned an unexpected response',
+            fix: 'try facet self-update',
+          },
+        }
+      }
+      const error = translateEngineRegistryError(result.error)
+      return {
+        ok: false,
+        error: { code: result.error.code, message: error.what, fix: error.fix, docsUrl: error.docsUrl },
+      }
+    }
+    return {
+      ok: true,
+      data: {
+        term: args[0] ?? null,
+        facets: result.facets.map((facet) => ({
+          name: facet.name,
+          latest_version: facet.latest_version,
+          asset_counts: facet.asset_counts,
+          owner: facet.owner,
+          published_at: facet.published_at,
+          publisher: facet.publisher,
+          visibility: facet.visibility,
+          author: facet.author,
+          description: facet.description,
+        })),
+      },
+    }
+  },
   run: async (args, _flags) => {
     if (args.length > 1) {
       writeCliError({

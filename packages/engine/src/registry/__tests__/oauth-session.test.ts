@@ -19,7 +19,9 @@ import { resolveCredential, writeCredentialsToken } from '../credentials.ts'
 import * as oauthPermissions from '../oauth-permissions.ts'
 import {
   beginCliLogin,
+  beginDurableCliLogin,
   completeCliLogin,
+  completeDurableCliLogin,
   logoutCliSession,
   type RegistrySessionOptions,
   resolveRegistryCredential,
@@ -32,6 +34,7 @@ import {
   type ReadyOAuthSession,
   readOAuthSession,
   saveOAuthSession,
+  withOAuthAttemptLock,
   withOAuthSessionLock,
 } from '../oauth-store.ts'
 import type { WireAuthMeResponse } from '../wire.ts'
@@ -358,6 +361,240 @@ describe('registry credential precedence and absence', () => {
 })
 
 describe('browser login and binding', () => {
+  test('a durable save with an uncertain acknowledgement does not claim rollback', async () => {
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      if (request.url === TOKEN_ENDPOINT) return json(tokenResponse())
+      return json(profile())
+    })
+    const setup = options(fetcher, {
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+    })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const originalSave = oauthStore.saveOAuthSession
+    const probe = spyOn(oauthStore, 'saveOAuthSession').mockImplementation(async (...args) => {
+      const result = await originalSave(...args)
+      if (!result.ok) return result
+      return { ok: false, error: { code: 'IO_ERROR', operation: 'sync', path: '<redacted>', cause: 'uncertain' } }
+    })
+    try {
+      const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+      expect(completed).toEqual({ ok: false, error: { code: 'LOGIN_STATE_UNCERTAIN' } })
+      expect((await stored())?.status).toBe('ready')
+    } finally {
+      probe.mockRestore()
+    }
+  })
+
+  test('a claimed attempt left by a crashed completer is never replayed', async () => {
+    let polls = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      polls++
+      return json(tokenResponse())
+    })
+    const setup = options(fetcher)
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const file = join(facetDir, 'oauth', 'attempts', `${begun.value.loginId}.json`)
+    const attempt = JSON.parse(readFileSync(file, 'utf8'))
+    writeFileSync(file, JSON.stringify({ ...attempt, state: 'completing' }))
+    const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+    expect(completed).toEqual({ ok: false, error: { code: 'LOGIN_RESTART_REQUIRED' } })
+    expect(polls).toBe(0)
+  })
+
+  test('cancelling a durable login stops polling and removes its pending secret', async () => {
+    const controller = new AbortController()
+    let polls = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      polls++
+      return json(tokenResponse())
+    })
+    const setup = options(fetcher, {
+      signal: controller.signal,
+      sleep: async () => {
+        controller.abort()
+      },
+    })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+    if (completed.ok) expect.unreachable()
+    expect(polls).toBe(0)
+    expect(existsSync(join(facetDir, 'oauth', 'attempts', `${begun.value.loginId}.json`))).toBe(false)
+    expect(await stored()).toBeNull()
+  })
+
+  test('an expired durable login is removed without polling', async () => {
+    let clock = NOW
+    let polls = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      polls++
+      return json(tokenResponse())
+    })
+    const setup = options(fetcher, { now: () => clock })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    clock += 301_000
+    const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+    expect(completed).toEqual({ ok: false, error: { code: 'LOGIN_RESTART_REQUIRED' } })
+    expect(polls).toBe(0)
+    expect(existsSync(join(facetDir, 'oauth', 'attempts', `${begun.value.loginId}.json`))).toBe(false)
+  })
+
+  test('a competing completion cannot poll an attempt while its lock is held', async () => {
+    let polls = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      polls++
+      return json(tokenResponse())
+    })
+    const setup = options(fetcher)
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const locked = await withOAuthAttemptLock(binding(), begun.value.loginId, async () => {
+      const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+      expect(completed).toEqual({ ok: false, error: { code: 'LOGIN_BUSY' } })
+      return { ok: true, value: undefined }
+    })
+    expect(locked.ok).toBe(true)
+    expect(polls).toBe(0)
+  })
+
+  test('a durable attempt refuses to overwrite a changed session', async () => {
+    await seed()
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      if (request.url === TOKEN_ENDPOINT) return json(tokenResponse())
+      return json(profile())
+    })
+    const setup = options(fetcher, {
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+    })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const replaced = await withOAuthSessionLock(binding(), (lock) =>
+      saveOAuthSession(ready({ generation: 2 }), 1, lock),
+    )
+    expect(replaced.ok).toBe(true)
+    expect(await completeDurableCliLogin(begun.value.loginId, setup)).toEqual({
+      ok: false,
+      error: { code: 'SESSION_CHANGED' },
+    })
+    expect((await stored())?.generation).toBe(2)
+  })
+  test('durable login starts and completes in separate processes', async () => {
+    const modulePath = new URL('../oauth-session.ts', import.meta.url).pathname
+    const script = `
+      import { beginDurableCliLogin, completeDurableCliLogin } from ${JSON.stringify(modulePath)};
+      const config = ${JSON.stringify(configResponse())};
+      const device = ${JSON.stringify(deviceResponse())};
+      const token = ${JSON.stringify(tokenResponse())};
+      const profile = ${JSON.stringify(profile())};
+      let clock = ${NOW};
+      const fetch = async input => {
+        const url = input instanceof Request ? input.url : String(input);
+        const body = url.endsWith('/v0/auth/cli/config') ? config
+          : url === ${JSON.stringify(AUTHORIZATION_ENDPOINT)} ? device
+          : url === ${JSON.stringify(TOKEN_ENDPOINT)} ? token : profile;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+      };
+      const options = { registryUrl: ${JSON.stringify(REGISTRY)}, fetch, now: () => clock, sleep: async ms => { clock += ms } };
+      const result = process.env.LOGIN_ID
+        ? await completeDurableCliLogin(process.env.LOGIN_ID, options)
+        : await beginDurableCliLogin(options);
+      console.log(JSON.stringify(result));
+    `
+    const invoke = async (id?: string) => {
+      const child = Bun.spawn([process.execPath, '-e', script], {
+        env: { ...process.env, ...(id === undefined ? {} : { LOGIN_ID: id }) },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const stdout = await new Response(child.stdout).text()
+      const stderr = await new Response(child.stderr).text()
+      expect(await child.exited).toBe(0)
+      expect(stderr).toBe('')
+      return JSON.parse(stdout)
+    }
+    const started = await invoke()
+    expect(started.ok).toBe(true)
+    expect(JSON.stringify(started)).not.toContain(DEVICE)
+    const completed = await invoke(started.value.loginId)
+    expect(completed.ok).toBe(true)
+    expect(completed.value.profile.username).toBe('example')
+    expect(JSON.stringify(completed)).not.toContain(ROTATED)
+  })
+
+  test('durable login stores the challenge privately and resumes by identifier', async () => {
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      if (request.url === TOKEN_ENDPOINT) return json(tokenResponse())
+      return json(profile())
+    })
+    const setup = options(fetcher, {
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+    })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    expect(JSON.stringify(begun)).not.toContain(DEVICE)
+    const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+    if (!completed.ok) expect.unreachable()
+    expect(completed.value.profile.username).toBe('example')
+    expect((await stored())?.status).toBe('ready')
+    const repeated = await completeDurableCliLogin(begun.value.loginId, setup)
+    if (repeated.ok) expect.unreachable()
+    expect(repeated.error.code).toBe('LOGIN_NOT_FOUND')
+  })
+
+  test('durable login never retries an ambiguous token exchange', async () => {
+    let clock = NOW
+    let polls = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === AUTHORIZATION_ENDPOINT) return json(deviceResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        polls++
+        throw new Error('network unavailable')
+      }
+      return json(profile())
+    })
+    const setup = options(fetcher, {
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+    })
+    const begun = await beginDurableCliLogin(setup)
+    if (!begun.ok) expect.unreachable()
+    const completed = await completeDurableCliLogin(begun.value.loginId, setup)
+    if (completed.ok) expect.unreachable()
+    expect(polls).toBe(1)
+    expect(await stored()).toBeNull()
+  })
   test('fresh first login verifies /auth/me and persists a ready session before exposing profile', async () => {
     const seen: string[] = []
     let profileRequest: Request | undefined

@@ -251,7 +251,7 @@ When a publish is accepted into the registry's moderation queue rather than publ
 
 ### Requirement: Users can sign in with a personal access token
 
-The CLI SHALL register a `login` command that guides a user through saving a registry credential. The command SHALL present a choice between pasting a personal access token (available now) and signing in via a web browser (shown as a disabled "coming soon" option that performs no action when chosen). When the user pastes a token, the CLI SHALL accept it with masked input so the token is not echoed in the clear, SHALL verify the token against the registry before saving it, and SHALL save it to the credentials file only after the registry confirms it is valid. On success the CLI SHALL confirm the signed-in identity to the user. On rejection the CLI SHALL render the registry's own error text and SHALL allow the user to try again.
+The CLI SHALL register a `login` command that guides a user through saving a registry credential. The command SHALL present a choice between pasting a personal access token and browser sign-in. When the user pastes a token, the CLI SHALL accept it with masked input so the token is not echoed in the clear, SHALL verify the token against the registry before saving it, and SHALL save it to the credentials file only after the registry confirms it is valid. On success the CLI SHALL confirm the signed-in identity to the user. On rejection the CLI SHALL render the registry's own error text and SHALL allow the user to try again.
 
 #### Scenario: login is available in help
 
@@ -273,11 +273,29 @@ The CLI SHALL register a `login` command that guides a user through saving a reg
 - **AND** the CLI SHALL NOT save the rejected token
 - **AND** the CLI SHALL allow the user to enter another token
 
-#### Scenario: Browser option is a disabled placeholder
+#### Scenario: Browser sign-in is available
 
 - **WHEN** a user runs `login` and selects the "sign in via browser" option
-- **THEN** the CLI SHALL take no action for that option
-- **AND** the CLI SHALL indicate that browser sign-in is not yet available
+- **THEN** the CLI SHALL initiate browser authorization and verify the registry identity before saving the session
+
+### Requirement: Programs can orchestrate browser login
+
+`facet login --no-browser --json` SHALL start a device authorization without opening a browser, retain its private device credential in protected local state, and return a non-secret login ID, verification URL, user code, and expiry in a single JSON document. The status SHALL identify the attempt as pending, not authenticated. `facet login --complete <id> --json` SHALL claim that pending attempt, wait for authorization, verify registry identity, and persist the session before reporting authenticated status. Device codes and access or refresh tokens SHALL NOT appear in stdout, stderr, or command arguments.
+
+Completion SHALL bind the pending attempt to the selected registry and original session snapshot. A competing completion SHALL fail without polling. An interrupted, crashed, or ambiguous token exchange SHALL NOT be replayed; the caller SHALL be directed to check the current login and start a fresh attempt. A known successful session save SHALL NOT be reported as rolled back after a late interrupt. If the persistence result is uncertain, the CLI SHALL say so.
+
+#### Scenario: Two invocations complete authorization
+
+- **WHEN** a program starts JSON login without a browser and presents the returned URL and code to a user
+- **AND** the user authorizes the request
+- **AND** the program completes the returned login ID
+- **THEN** completion SHALL return an authenticated identity only after verified credentials are saved
+
+#### Scenario: A stale attempt cannot overwrite a changed session
+
+- **WHEN** the selected OAuth session changes after a pending login is created
+- **AND** the pending login is completed
+- **THEN** the command SHALL refuse to overwrite the newer session
 
 #### Scenario: login warns when the environment token will take precedence
 

@@ -1,6 +1,6 @@
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import { updateCommand } from '../update/index.ts'
+import { runUpdateJson, updateCommand } from '../update/index.ts'
 import { buildUpdateErrorJson } from '../update/json.ts'
 
 /**
@@ -24,6 +24,19 @@ export const outdatedCommand: Command = {
       description: "Compare against each facet's latest release, ignoring the range in facets.json",
     },
     json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
+  },
+  runJson: async (args, flags) => {
+    if (args.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: 'facet outdated does not accept positional arguments',
+          fix: 'run facet outdated --json for a machine-readable report',
+        },
+      }
+    }
+    return runUpdateJson([], { ...flags, 'dry-run': true, interactive: false })
   },
   run: async (args, flags) => {
     // Read before the refusal below, not after it: a run refused for its

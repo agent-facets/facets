@@ -27,6 +27,24 @@ Global help lists every registered command with a short description. Aliases suc
 
 Per-command help prints the usage line, description, and available flags. Alias spellings show the canonical command name.
 
+### JSON output
+
+Pass `--json` before or after a command to receive one JSON document on stdout. JSON mode never prompts, opens a browser, or launches an editor. It does not grant consent or overwrite permission. Flags after `--` are positional arguments.
+
+```json
+{
+  "schemaVersion": "3",
+  "command": "list",
+  "ok": true,
+  "data": { "manifestPresent": false, "facets": [] },
+  "warnings": []
+}
+```
+
+Failures replace `data` with an `error` containing a stable `code`, `message`, and optional `details`, `fix`, and `docsUrl`. Warnings have `code` and `message`. Explicit diagnostics and subprocess errors can appear on stderr. Check the exit code as well as `ok`.
+
+Schema 3 changes existing JSON output: move create, modify, build, update, and outdated success-field reads under `data`. Build failures now expose validation issues under `error.details.issues`; update failures use `error.message` and `error.details.message` instead of `error.what` and `error.detail`.
+
 <Note>
   `--version` is the global version flag only before a command name. After one it belongs to that command, so `facet modify facet --version 1.2.3` sets a facet's version and `facet self-update --version 0.7.0` selects a CLI release.
 </Note>

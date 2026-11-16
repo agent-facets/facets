@@ -1,7 +1,9 @@
 import type { RegistrySessionFailure } from '@agent-facets/engine'
 import {
   beginCliLogin,
+  beginDurableCliLogin,
   completeCliLogin,
+  completeDurableCliLogin,
   fetchAuthMe,
   resolveCredential,
   writeCredentialsToken,
@@ -12,6 +14,7 @@ import type { Command } from '../../commands.ts'
 import { LoginMenu } from '../../tui/components/login-menu.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
+import type { JsonError } from '../../util/json-output.ts'
 import { openBrowser } from '../../util/open-browser.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
@@ -27,8 +30,84 @@ export const loginCommand: Command = {
       description: 'Use browser sign-in; --no-browser shows the code without opening a browser',
     },
     token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
+    complete: { type: 'string', description: 'Complete a pending machine-driven browser login' },
+  },
+  runJson: async (args, flags) => {
+    if (
+      args.length > 0 ||
+      Object.keys(flags).some((name) => !['browser', 'token', 'complete', 'json'].includes(name)) ||
+      flags.token === true ||
+      flags.browser === true ||
+      (flags.complete !== undefined && (flags.browser !== undefined || typeof flags.complete !== 'string'))
+    ) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'incompatible login arguments' } }
+    }
+    const controller = new AbortController()
+    const interrupt = () => controller.abort()
+    process.on('SIGINT', interrupt)
+    try {
+      if (typeof flags.complete === 'string') {
+        const completed = await completeDurableCliLogin(flags.complete, { signal: controller.signal })
+        if (!completed.ok) {
+          return { ok: false, error: durableLoginError(completed.error) }
+        }
+        const { profile, registry, cleanupFailed } = completed.value
+        return {
+          ok: true,
+          data: {
+            status: 'authenticated',
+            registry,
+            identity: {
+              username: profile.username,
+              email: profile.email,
+              tier: profile.tier,
+              suspended: profile.suspended,
+            },
+            credentialStored: true,
+          },
+          warnings: [
+            ...jsonCredentialWarnings(),
+            ...(cleanupFailed
+              ? [{ code: 'LOGIN_CLEANUP_FAILED', message: 'Could not remove pending login state.' }]
+              : []),
+          ],
+        }
+      }
+      if (flags.browser !== false) {
+        return {
+          ok: false,
+          error: { code: 'INVALID_ARGUMENTS', message: 'JSON login requires --no-browser or --complete <id>' },
+        }
+      }
+      const started = await beginDurableCliLogin({ signal: controller.signal })
+      if (!started.ok) return { ok: false, error: durableLoginError(started.error) }
+      return {
+        ok: true,
+        data: {
+          status: 'authorization_pending',
+          loginId: started.value.loginId,
+          registry: started.value.registry,
+          verificationUri: started.value.display.verificationUri,
+          userCode: started.value.display.userCode,
+          expiresAt: new Date(started.value.expiresAt).toISOString(),
+        },
+        warnings: jsonCredentialWarnings(),
+      }
+    } finally {
+      process.off('SIGINT', interrupt)
+    }
   },
   run: async (args, flags) => {
+    if (flags.complete !== undefined) {
+      const result = await loginCommand.runJson?.(args, { ...flags, json: true })
+      if (result === undefined) throw new Error('login JSON handler is missing')
+      if (!result.ok) {
+        writeCliError({ what: result.error.message, fix: result.error.fix ?? 'start a new login' })
+        return result.exitCode ?? 1
+      }
+      process.stdout.write('Login completed.\n')
+      return result.exitCode ?? 0
+    }
     if (
       args.length > 0 ||
       Object.keys(flags).some((name) => name !== 'browser' && name !== 'token') ||
@@ -72,6 +151,59 @@ export const loginCommand: Command = {
     process.stdout.write('Cancelled.\n')
     return 1
   },
+}
+
+function durableLoginError(
+  failure: Exclude<Awaited<ReturnType<typeof completeDurableCliLogin>>, { ok: true }>['error'],
+): JsonError {
+  switch (failure.code) {
+    case 'LOGIN_STATE_UNCERTAIN':
+      return {
+        code: failure.code,
+        message: 'Login credential persistence could not be confirmed.',
+        fix: 'check facet whoami before starting another login',
+      }
+    case 'LOGIN_RESTART_REQUIRED':
+      return {
+        code: failure.code,
+        message: 'The login attempt cannot be resumed.',
+        fix: 'check facet whoami, then start a new login if needed',
+      }
+    case 'LOGIN_BUSY':
+      return { code: failure.code, message: 'Another process is completing this login.', fix: 'wait for that process' }
+    case 'LOGIN_NOT_FOUND':
+    case 'INVALID_LOGIN_ID':
+      return { code: failure.code, message: 'The pending login was not found.', fix: 'start a new login' }
+    default: {
+      const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: failure })
+      return {
+        code: failure.code,
+        message: error.what,
+        ...(error.detail ? { details: { message: error.detail } } : {}),
+        fix: error.fix,
+        docsUrl: error.docsUrl,
+      }
+    }
+  }
+}
+
+function jsonCredentialWarnings(): { code: string; message: string }[] {
+  const existing = resolveCredential()
+  if (existing.source === 'env') {
+    return [{ code: 'ENV_CREDENTIAL_ACTIVE', message: 'FACET_TOKEN takes precedence over the browser session.' }]
+  }
+  if (existing.source === 'file') {
+    return [
+      {
+        code: 'PAT_CREDENTIAL_ACTIVE',
+        message: 'The saved personal access token takes precedence over the browser session.',
+      },
+    ]
+  }
+  if (existing.reason !== undefined) {
+    return [{ code: 'PAT_CREDENTIAL_UNREADABLE', message: 'The saved personal access token could not be read.' }]
+  }
+  return []
 }
 
 function warnShadowedCredential(): void {

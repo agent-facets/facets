@@ -16,7 +16,10 @@ export function createMiseMethod(install: MiseInstall): InstallMethod {
     displayName: 'mise',
     describe: ({ targetVersion }) =>
       `mise use --path ${shellQuote(install.configPath)} ${shellQuote(toolSpec(install, targetVersion))}`,
-    update: ({ targetVersion, onError }) =>
-      spawnInherit(['mise', 'use', '--path', install.configPath, toolSpec(install, targetVersion)], { onError }),
+    update: ({ targetVersion, onError, machine }) =>
+      spawnInherit(['mise', 'use', '--path', install.configPath, toolSpec(install, targetVersion)], {
+        onError,
+        machine,
+      }),
   }
 }

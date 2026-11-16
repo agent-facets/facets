@@ -11,6 +11,6 @@ export const yarnMethod: InstallMethod = {
   kind: 'yarn',
   displayName: 'yarn (global)',
   describe: ({ targetVersion }) => `yarn global add agent-facets@${targetVersion}`,
-  update: ({ targetVersion, onError }) =>
-    spawnInherit(['yarn', 'global', 'add', `agent-facets@${targetVersion}`], { onError }),
+  update: ({ targetVersion, onError, machine }) =>
+    spawnInherit(['yarn', 'global', 'add', `agent-facets@${targetVersion}`], { onError, machine }),
 }

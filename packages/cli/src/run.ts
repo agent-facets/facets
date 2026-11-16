@@ -6,8 +6,9 @@ import {
   findShortFlagCollisions,
   resolveCommand,
 } from './commands.ts'
-import { printCommandHelp, printGlobalHelp } from './help.ts'
+import { commandHelpData, globalHelpData, printCommandHelp, printGlobalHelp } from './help.ts'
 import { findClosestCommand } from './suggest.ts'
+import { writeJsonResult } from './util/json-output.ts'
 import { version } from './version.ts'
 
 export async function run(fullArgv: string[], commands: Record<string, Command>): Promise<number> {
@@ -15,9 +16,21 @@ export async function run(fullArgv: string[], commands: Record<string, Command>)
   // flag (`facet cat cowsay -- --help` selects a file named `--help`). The
   // parser has no notion of `--`, so the split happens here, before any
   // parsing, and the operands are appended to the command's positionals.
+  // Both the human and the JSON path read from this one split.
   const separator = fullArgv.indexOf('--')
   const argv = separator === -1 ? fullArgv : fullArgv.slice(0, separator)
   const operands = separator === -1 ? [] : fullArgv.slice(separator + 1)
+
+  const jsonArgs = parse(argv, { boolean: ['help', 'version', 'json'] })
+  if (argv.some((arg) => arg.startsWith('--json=') && arg !== '--json=true' && arg !== '--json=false')) {
+    const commandName = String(jsonArgs._[0] ?? 'help')
+    const command = resolveCommand(commands, commandName)
+    return writeJsonResult(command?.name ?? commandName, {
+      ok: false,
+      error: { code: 'INVALID_ARGUMENTS', message: '--json must be a boolean' },
+    })
+  }
+  if (jsonArgs.json === true) return runJson(argv, operands, commands)
 
   const args = parse(argv, {
     boolean: ['help', 'version'],
@@ -74,6 +87,13 @@ export async function run(fullArgv: string[], commands: Record<string, Command>)
   if (args.help) {
     printCommandHelp(command)
     return 0
+  }
+  if (
+    command.name === 'login' &&
+    argv.slice(commandIndex + 1).filter((arg) => arg === '--complete' || arg.startsWith('--complete=')).length > 1
+  ) {
+    console.error('invalid login arguments: --complete must not be repeated')
+    return 1
   }
 
   // Build per-command flag parsing config.
@@ -162,4 +182,83 @@ export async function run(fullArgv: string[], commands: Record<string, Command>)
   }
 
   return command.run(positionalArgs, flags)
+}
+
+async function runJson(before: string[], after: string[], commands: Record<string, Command>): Promise<number> {
+  let name = 'help'
+  try {
+    const discovery = parse(before, { boolean: ['help', 'version', 'json'] })
+    const commandName = String(discovery._[0] ?? '')
+    const commandIndex = commandName ? before.indexOf(commandName) : -1
+    const versionIndex = before.indexOf('--version')
+    if (versionIndex >= 0 && (commandIndex < 0 || versionIndex < commandIndex)) {
+      return writeJsonResult('version', { ok: true, data: { version } })
+    }
+    if (!commandName || commandName === 'help') {
+      const topic = commandName === 'help' ? String(discovery._[1] ?? '') : ''
+      const command = topic ? resolveCommand(commands, topic) : undefined
+      return writeJsonResult('help', { ok: true, data: command ? commandHelpData(command) : globalHelpData(commands) })
+    }
+    const command = resolveCommand(commands, commandName)
+    if (!command) {
+      const suggestion = findClosestCommand(commandName, allCommandNames(commands))
+      return writeJsonResult(commandName, {
+        ok: false,
+        error: { code: 'UNKNOWN_COMMAND', message: `Unknown command "${commandName}".`, details: { suggestion } },
+      })
+    }
+    name = command.name
+    if (discovery.help) return writeJsonResult('help', { ok: true, data: commandHelpData(command) })
+    if (
+      name === 'login' &&
+      before.slice(commandIndex + 1).filter((arg) => arg === '--complete' || arg.startsWith('--complete=')).length > 1
+    ) {
+      return writeJsonResult(name, {
+        ok: false,
+        error: { code: 'INVALID_ARGUMENTS', message: '--complete must not be repeated' },
+      })
+    }
+    const booleanFlags = ['json']
+    const stringFlags: string[] = []
+    const arrayFlags: string[] = []
+    const alias: Record<string, string> = {}
+    const definitions = command.flags ?? {}
+    const collisions = findShortFlagCollisions(definitions)
+    if (collisions.length > 0) throw new Error('ambiguous short flags')
+    for (const [key, def] of Object.entries(definitions)) {
+      const bucket = def.type === 'boolean' ? booleanFlags : def.type === 'string' ? stringFlags : arrayFlags
+      if (!bucket.includes(key)) bucket.push(key)
+      if (def.short !== undefined) {
+        bucket.push(def.short)
+        alias[def.short] = key
+      }
+    }
+    const parsed = parse(before.slice(commandIndex + 1), {
+      boolean: booleanFlags,
+      string: stringFlags,
+      array: arrayFlags,
+      alias,
+    })
+    const flags: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === '_' || key in alias) continue
+      flags[key] = arrayFlags.includes(key) && value !== undefined ? (Array.isArray(value) ? value : [value]) : value
+    }
+    flags.json = true
+    const args = [...parsed._.map(String), ...after]
+    if (name === 'adapter' && args[0]) name = `adapter ${args[0] === 'install' ? 'add' : args[0]}`
+    if (!command.runJson) {
+      return writeJsonResult(name, {
+        ok: false,
+        error: { code: 'JSON_NOT_IMPLEMENTED', message: `JSON output is not yet available for ${name}.` },
+      })
+    }
+    return writeJsonResult(name, await command.runJson(args, flags))
+  } catch {
+    return writeJsonResult(name, {
+      ok: false,
+      error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' },
+      exitCode: 2,
+    })
+  }
 }

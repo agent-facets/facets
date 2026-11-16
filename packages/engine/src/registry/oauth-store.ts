@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, constants, fsyncSync, lstatSync, openSync, readlinkSync, type Stats } from 'node:fs'
-import { type FileHandle, lstat, mkdir, open, rename, rm, statfs } from 'node:fs/promises'
+import { type FileHandle, lstat, mkdir, open, readdir, rename, rm, statfs } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
 import { inspectDarwinDirectoryAcl } from './oauth-permissions.ts'
@@ -146,6 +146,132 @@ export interface OAuthStoreOptions {
 export interface OAuthSessionLock {
   readonly registry_origin: string
   readonly [lockBrand]: true
+}
+
+/** Protected, attempt-scoped operations; the lock is held until the callback settles. */
+export interface OAuthAttemptStore {
+  read(): Promise<OAuthStoreResult<unknown | null>>
+  write(value: unknown): Promise<OAuthStoreResult<void>>
+  remove(): Promise<OAuthStoreResult<void>>
+}
+
+export async function listOAuthAttemptIds(
+  binding: OAuthSessionBinding,
+  options: OAuthStoreOptions = {},
+): Promise<OAuthStoreResult<string[]>> {
+  const parent = prepareContext(binding, options)
+  if (!parent.ok) return parent
+  const root = await ensureOAuthRoot(parent.value, options.signal)
+  if (!root.ok) return root
+  const context: StoreContext = {
+    ...parent.value,
+    root: join(parent.value.root, 'attempts'),
+    authorityRoot: join(parent.value.authorityRoot, 'attempts'),
+  }
+  const safeRoot = await ensureOAuthRoot(context, options.signal)
+  if (!safeRoot.ok) return safeRoot
+  const filesystem = await requireLocalFilesystem(context)
+  if (!filesystem.ok) return filesystem
+  try {
+    return {
+      ok: true,
+      value: (await readdir(context.root))
+        .filter((name) => /^[a-f0-9]{32}\.json$/.test(name))
+        .map((name) => name.slice(0, -5))
+        .sort()
+        .slice(0, 16),
+    }
+  } catch (error) {
+    return ioFailure('list attempts', context.root, error)
+  }
+}
+
+export async function withOAuthAttemptLock<T>(
+  binding: OAuthSessionBinding,
+  id: string,
+  operation: (store: OAuthAttemptStore) => Promise<OAuthStoreResult<T>>,
+  options: OAuthStoreOptions = {},
+): Promise<OAuthStoreResult<T>> {
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    return { ok: false, error: { code: 'INVALID_BINDING', issues: ['invalid login attempt identifier'] } }
+  }
+  const parent = prepareContext(binding, options)
+  if (!parent.ok) return parent
+  const root = await ensureOAuthRoot(parent.value, options.signal)
+  if (!root.ok) return root
+  const context: StoreContext = {
+    ...parent.value,
+    root: join(parent.value.root, 'attempts'),
+    authorityRoot: join(parent.value.authorityRoot, 'attempts'),
+    statePath: join(parent.value.root, 'attempts', `${id}.json`),
+    lockPath: join(parent.value.root, 'attempts', `${id}.lock.sqlite`),
+  }
+  const safeRoot = await ensureOAuthRoot(context, options.signal)
+  if (!safeRoot.ok) return safeRoot
+  const filesystem = await requireLocalFilesystem(context)
+  if (!filesystem.ok) return filesystem
+  const acquired = await acquireLock(binding, context)
+  if (!acquired.ok) return acquired
+  let result: OAuthStoreResult<T> | undefined
+  let thrown: unknown
+  try {
+    result = await operation({
+      read: () => readAttemptFile(context),
+      write: (value) => atomicWriteSession(value, context),
+      remove: async () => {
+        const checked = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
+        if (!checked.ok) return checked
+        if (!checked.value) return { ok: true, value: undefined }
+        try {
+          await rm(context.statePath)
+          await syncDirectory(context.root)
+          return { ok: true, value: undefined }
+        } catch (error) {
+          return ioFailure('remove attempt', context.statePath, error)
+        }
+      },
+    })
+  } catch (error) {
+    thrown = error
+  }
+  const released = await releaseLock(acquired.value, thrown === undefined)
+  if (!released.ok) return released
+  if (thrown !== undefined) throw thrown
+  if (result === undefined) throw new Error('OAuth attempt operation returned no result')
+  return result
+}
+
+async function readAttemptFile(context: StoreContext): Promise<OAuthStoreResult<unknown | null>> {
+  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
+  if (!inspected.ok) return inspected
+  if (!inspected.value) return { ok: true, value: null }
+  let handle: FileHandle | undefined
+  try {
+    handle = await open(context.statePath, constants.O_RDONLY | noFollowFlag())
+    const opened = await handle.stat()
+    const safe = inspectStats(opened, context.statePath, 'file', context.ownerUid, 0o600)
+    if (!safe.ok) return safe
+    if (opened.size > 64 * 1024) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_SESSION', path: context.statePath, issues: ['attempt is too large'] },
+      }
+    }
+    let value: unknown
+    try {
+      value = JSON.parse(await handle.readFile('utf8'))
+    } catch {
+      return {
+        ok: false,
+        error: { code: 'INVALID_SESSION', path: context.statePath, issues: ['attempt is not valid JSON'] },
+      }
+    }
+    return { ok: true, value }
+  } catch (error) {
+    return ioFailure('read attempt', context.statePath, error)
+  } finally {
+    await handle?.close().catch(() => {})
+  }
 }
 
 interface StoreContext {
@@ -553,7 +679,7 @@ async function readSessionFile(
   }
 }
 
-async function atomicWriteSession(session: StoredOAuthState, context: StoreContext): Promise<OAuthStoreResult<void>> {
+async function atomicWriteSession(session: unknown, context: StoreContext): Promise<OAuthStoreResult<void>> {
   const tempPath = `${context.statePath}.${randomUUID()}.tmp`
   let handle: FileHandle | undefined
   let renamed = false

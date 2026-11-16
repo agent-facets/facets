@@ -16,6 +16,30 @@ export const instructionsCommand: Command = {
   description: 'Print CLI usage instructions FOR AI AGENTS',
   usage: '[topic]',
   implemented: true,
+  runJson: async (args) => {
+    const topic = args[0] ?? DEFAULT_TOPIC
+    if (args.length > 1 || !isInstructionTopic(topic)) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: `Unknown or invalid instructions topic "${topic}".`,
+          details: { topics: INSTRUCTION_TOPICS },
+          fix: `run: facet instructions [${INSTRUCTION_TOPICS.join('|')}]`,
+        },
+      }
+    }
+    return {
+      ok: true,
+      data: {
+        topic,
+        text: promptFor(topic),
+        ...(topic === 'manifest'
+          ? { schema: FacetManifestSchema.toJsonSchema({ fallback: { predicate: (ctx) => ctx.base } }) }
+          : {}),
+      },
+    }
+  },
   run: async (args: string[]): Promise<number> => {
     const topic = args[0] ?? DEFAULT_TOPIC
 

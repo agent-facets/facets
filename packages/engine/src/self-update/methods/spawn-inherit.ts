@@ -11,13 +11,16 @@ import type { SelfUpdateErrorHandler } from './types.ts'
  * return 1 — surfaces the failure without translating it into something
  * less helpful.
  */
-export async function spawnInherit(cmd: string[], opts: { onError?: SelfUpdateErrorHandler } = {}): Promise<number> {
+export async function spawnInherit(
+  cmd: string[],
+  opts: { onError?: SelfUpdateErrorHandler; machine?: boolean } = {},
+): Promise<number> {
   const [first, ...rest] = cmd
   if (first === undefined) return 1
   try {
     const proc = Bun.spawn([first, ...rest], {
-      stdin: 'inherit',
-      stdout: 'inherit',
+      stdin: opts.machine ? 'ignore' : 'inherit',
+      stdout: opts.machine ? 'ignore' : 'inherit',
       stderr: 'inherit',
     })
     return await proc.exited

@@ -35,6 +35,38 @@ export const modifyCommand: Command = {
     // Note: `--adapter-<name> '<json>'` and `--remove-adapter-<name>` are
     // open-ended flags handled by parseModifyArgs; they can't be declared here.
   },
+  runJson: async (args, flags) => {
+    const { positionals, directory } = splitDirectory(args)
+    const parsed = parseModifyArgs(positionals, flags)
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_ARGUMENTS', message: parsed.error.what, fix: parsed.error.fix },
+      }
+    }
+    const resolved = await resolveTargetDir(directory, { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) return { ok: false, error: { code: 'INVALID_DIRECTORY', message: resolved.message } }
+    const loaded = await loadManifest(resolved.dir)
+    if (!loaded.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_MANIFEST',
+          message: 'could not load facet.json',
+          details: { issues: loaded.errors.map((error) => ({ message: error.message })) },
+          fix: 'fix the manifest and try again',
+        },
+      }
+    }
+    const result = applyModify(loaded.data, parsed.op)
+    if (!result.ok) {
+      const error = describeApplyError(result.error)
+      return { ok: false, error: { code: 'MODIFY_FAILED', message: error.what, fix: error.fix } }
+    }
+    await writeManifest(result.manifest, resolved.dir)
+    await applyModifyFileOps(resolved.dir, result.fileOps)
+    return { ok: true, data: { changes: result.summary } }
+  },
   run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
     // The optional [directory] positional comes AFTER <target> [name]. Peel it
     // off if present so it isn't mistaken for an asset name.

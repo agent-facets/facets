@@ -19,6 +19,55 @@ export const whoamiCommand: Command = {
   name: 'whoami',
   description: 'Show the signed-in registry identity',
   implemented: true,
+  runJson: async (args) => {
+    if (args.length > 0) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'whoami does not accept arguments' } }
+    }
+    const resolved = await resolveRegistryCredential()
+    if (!resolved.ok) {
+      const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: resolved.error })
+      return {
+        ok: false,
+        error: { code: 'AUTHENTICATION_ERROR', message: error.what, fix: error.fix, docsUrl: error.docsUrl },
+      }
+    }
+    const credential = resolved.value
+    if (credential.source === 'absent') {
+      return {
+        ok: false,
+        error: {
+          code: 'NOT_SIGNED_IN',
+          message: 'No registry credential found',
+          fix: 'run facet login or set FACET_TOKEN',
+        },
+      }
+    }
+    let profile: Readonly<WireAuthMeResponse>
+    if (credential.source === 'oauth') {
+      profile = credential.profile
+    } else {
+      const checked = await fetchAuthMe(credential.token)
+      if (!checked.ok) {
+        const error = translateEngineRegistryError(checked.error)
+        return {
+          ok: false,
+          error: { code: checked.error.code, message: error.what, fix: error.fix, docsUrl: error.docsUrl },
+        }
+      }
+      profile = checked.value
+    }
+    return {
+      ok: true,
+      data: {
+        username: profile.username,
+        email: profile.email,
+        tier: profile.tier,
+        suspended: profile.suspended,
+        registry: credential.source === 'oauth' ? credential.registryOrigin : getRegistryBaseUrl(),
+        credentialSource: credential.source,
+      },
+    }
+  },
   run: async (_args, _flags) => {
     const resolved = await resolveRegistryCredential()
     if (!resolved.ok) {

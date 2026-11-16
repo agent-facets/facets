@@ -18,6 +18,7 @@ import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
 import { updateCommand } from './commands/update/index.ts'
 import { whoamiCommand } from './commands/whoami/index.ts'
+import type { JsonResult } from './util/json-output.ts'
 
 type LowercaseLetter =
   | 'a'
@@ -148,7 +149,13 @@ export type Command = {
    * invocable so typos surface helpful "did you mean…" suggestions.
    */
   implemented?: boolean
-  run: (args: string[], flags: Record<string, unknown>) => Promise<number>
+  run: (
+    args: string[],
+    flags: Record<string, unknown>,
+    context?: { onJsonDocument?: (document: unknown) => void },
+  ) => Promise<number>
+  /** Machine-readable execution. Missing handlers fail closed rather than running a human UI. */
+  runJson?: (args: string[], flags: Record<string, unknown>) => Promise<JsonResult>
 }
 
 export const commands: Record<string, Command> = {

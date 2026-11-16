@@ -84,7 +84,7 @@ Starter asset files are plain markdown with no front matter, because asset metad
 
 Headless scaffolding requires v0.24.0 or newer.
 
-Passing `--name`, `--description`, `--version`, `--private`, `--skill`, `--agent`, or `--command` skips the wizard. `--force` and `--json` do not trigger headless mode on their own, so `facet create --json` alone still opens the wizard and prints no JSON document.
+Passing `--name`, `--description`, `--version`, `--private`, `--skill`, `--agent`, or `--command` selects headless creation. `--json` never opens the wizard; provide the required content flags or it returns an error.
 
 After scaffolding, validate with [`facet build --verify`](/cli/authoring/build) or make further changes with [`facet modify`](/cli/authoring/modify).
 

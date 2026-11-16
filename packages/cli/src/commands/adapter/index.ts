@@ -40,6 +40,92 @@ export const adapterCommand: Command = {
   usage: `${ADAPTER_SUBCOMMAND_USAGE} [args]`,
   implemented: true,
 
+  async runJson(args) {
+    const subcommand = args[0]
+    const deprecated = subcommand === ADAPTER_INSTALL_SUBCOMMAND
+    const warnings = deprecated ? [{ code: 'DEPRECATED_COMMAND', message: ADAPTER_INSTALL_DEPRECATION_WARNING }] : []
+    if (subcommand === ADAPTER_ADD_SUBCOMMAND || deprecated) {
+      if (args.length !== 2 || !args[1]) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_ARGUMENTS',
+            message: 'adapter add requires exactly one specifier in JSON mode',
+            fix: 'provide an adapter specifier',
+          },
+          warnings,
+        }
+      }
+      const specifier = args[1]
+      const installed = await installAdapter(specifier)
+      if (!installed.ok) {
+        const error = describeAdapterInstallFailure(installed.failure)
+        return {
+          ok: false,
+          error: { code: 'ADAPTER_INSTALL_FAILED', message: error.what, fix: error.fix },
+          warnings,
+        }
+      }
+      return {
+        ok: true,
+        data: { name: installed.adapter.name, specifier },
+        warnings: [
+          ...warnings,
+          ...installed.warnings.map((warning) => ({
+            code: 'ADAPTER_PLACEMENT_WARNING',
+            message: formatPlacementWarning(warning),
+          })),
+        ],
+      }
+    }
+    if (subcommand === 'remove') {
+      if (args.length !== 2 || !args[1]) {
+        return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'adapter remove requires exactly one name' } }
+      }
+      const name = args[1]
+      if (!(await removeAdapter(name))) {
+        return { ok: false, error: { code: 'ADAPTER_NOT_FOUND', message: `Adapter "${name}" is not installed.` } }
+      }
+      return { ok: true, data: { name, removed: true } }
+    }
+    if (subcommand !== 'list') {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: 'Unknown or missing adapter subcommand.',
+        },
+      }
+    }
+    if (args.length !== 1) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'adapter list does not accept arguments' } }
+    }
+    const inspections = await inspectInstalledAdapters()
+    return {
+      ok: true,
+      data: {
+        adapters: inspections.map((inspection) => ({
+          name: inspection.name,
+          managed: inspection.managed,
+          status: inspection.kind,
+          apiVersion:
+            inspection.kind === 'compatible'
+              ? inspection.verified.adapter.apiVersion
+              : inspection.kind === 'broken'
+                ? inspection.declaredApi
+                : undefined,
+          reason:
+            inspection.kind === 'incompatible'
+              ? inspection.failure.kind
+              : inspection.kind === 'broken'
+                ? inspection.reason.kind
+                : undefined,
+          repair: inspection.repair,
+        })),
+      },
+    }
+  },
+
   async run(args, _flags) {
     const subcommand = args[0]
 

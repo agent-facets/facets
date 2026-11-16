@@ -109,6 +109,8 @@ export interface DeviceAuthDependencies {
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>
   signal?: AbortSignal
   requestTimeoutMs?: number
+  /** A durable device attempt must never retry an ambiguous dispatched exchange. */
+  conservativePolling?: boolean
 }
 
 type DispatchFailure = { kind: 'cancelled' | 'network' | 'timeout'; attempted: boolean }
@@ -203,6 +205,9 @@ export async function pollDeviceAuthorization(
       if (dispatched.failure.kind === 'cancelled') {
         return { ok: false, error: { code: 'CANCELLED', attempted: dispatched.failure.attempted } }
       }
+      if (dependencies.conservativePolling && dispatched.failure.attempted) {
+        return { ok: false, error: { code: 'POLLING_UNAVAILABLE', reason: dispatched.failure.kind } }
+      }
       consecutiveTransients++
       if (consecutiveTransients >= MAX_CONSECUTIVE_TRANSIENTS) {
         return { ok: false, error: { code: 'POLLING_UNAVAILABLE', reason: dispatched.failure.kind } }
@@ -239,6 +244,9 @@ export async function pollDeviceAuthorization(
 
     const transient = classifyTransientStatus(response.status)
     if (transient !== undefined) {
+      if (dependencies.conservativePolling) {
+        return { ok: false, error: { code: 'POLLING_UNAVAILABLE', reason: transient, status: response.status } }
+      }
       consecutiveTransients++
       if (consecutiveTransients >= MAX_CONSECUTIVE_TRANSIENTS) {
         return {

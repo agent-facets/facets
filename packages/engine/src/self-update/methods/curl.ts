@@ -25,7 +25,7 @@ export function installerUrl(): string {
  */
 export async function runCurlInstaller(
   targetVersion: string,
-  opts: { modifyPath: boolean; onError?: SelfUpdateErrorHandler },
+  opts: { modifyPath: boolean; onError?: SelfUpdateErrorHandler; machine?: boolean },
 ): Promise<number> {
   const url = installerUrl()
 
@@ -51,7 +51,7 @@ export async function runCurlInstaller(
   try {
     const proc = Bun.spawn(args, {
       stdin: installer,
-      stdout: 'inherit',
+      stdout: opts.machine ? 'ignore' : 'inherit',
       stderr: 'inherit',
     })
     return await proc.exited
@@ -69,5 +69,6 @@ export const curlMethod: InstallMethod = {
   // bytes into bash's stdin rather than going through a shell pipe.
   describe: ({ targetVersion }) =>
     `curl -fsSL ${installerUrl()} | bash -s -- --no-modify-path --version ${targetVersion}`,
-  update: ({ targetVersion, onError }) => runCurlInstaller(targetVersion, { modifyPath: false, onError }),
+  update: ({ targetVersion, onError, machine }) =>
+    runCurlInstaller(targetVersion, { modifyPath: false, onError, machine }),
 }

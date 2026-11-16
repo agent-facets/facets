@@ -8,6 +8,14 @@ export const editCommand: Command = {
   description: 'Edit a facet project interactively',
   usage: '[directory]',
   implemented: true,
+  runJson: async () => ({
+    ok: false,
+    error: {
+      code: 'INTERACTION_REQUIRED',
+      message: 'facet edit requires an interactive terminal',
+      fix: 'use facet modify for non-interactive edits',
+    },
+  }),
   run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {

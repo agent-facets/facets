@@ -28,6 +28,38 @@ export const selfUpdateCommand: Command = {
       description: 'Print the plan; do not modify any files',
     },
   },
+  runJson: async (args, flags) => {
+    if (args.length > 0) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_ARGUMENTS', message: 'self-update does not accept positional arguments' },
+      }
+    }
+    let result: unknown
+    const errors: string[] = []
+    const warnings: { code: string; message: string }[] = []
+    const exitCode = await runSelfUpdate({
+      currentVersion,
+      targetVersion: typeof flags.version === 'string' && flags.version !== '' ? flags.version : undefined,
+      dryRun: flags['dry-run'] === true,
+      machine: true,
+      onResult: (value) => {
+        result = value
+      },
+      onOutput: (message) => warnings.push({ code: 'SELF_UPDATE_NOTICE', message }),
+      onError: (event) => errors.push(formatSelfUpdateError(event)),
+    })
+    if (exitCode !== 0) {
+      return {
+        ok: false,
+        error: { code: 'SELF_UPDATE_FAILED', message: errors.join('').trim() || 'self-update failed' },
+        exitCode,
+        warnings,
+      }
+    }
+    if (errors.length > 0) warnings.push({ code: 'SELF_UPDATE_GUIDANCE', message: errors.join('').trim() })
+    return { ok: true, data: result, warnings }
+  },
   run: async (_args, flags) => {
     const targetVersion = typeof flags.version === 'string' && flags.version !== '' ? flags.version : undefined
     const dryRun = flags['dry-run'] === true
