@@ -15,13 +15,13 @@ commands:
                 name: Install mise
             - restore_cache:
                 keys:
-                    - v2-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}
-                    - v2-mise-{{ .Environment.MISE_ENV }}-
+                    - v3-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.release.toml" }}
+                    - v3-mise-{{ .Environment.MISE_ENV }}-
             - run:
                 command: mise install --yes
                 name: Install tools
             - save_cache:
-                key: v2-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}
+                key: v3-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.release.toml" }}
                 paths:
                     - ~/.local/share/mise/installs
                     - ~/.local/share/mise/downloads

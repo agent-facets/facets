@@ -69,7 +69,7 @@ the jobs that run checks (`check`, `main-pipeline`) use it.
 
 | Cache         | Key                                                                                   | Paths                                                       | Defined in                            |
 |---------------|---------------------------------------------------------------------------------------|------------------------------------------------------------|---------------------------------------|
-| mise tools    | `v2-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}`                       | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
+| mise tools    | `v3-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.release.toml" }}` | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
 | facets        | `v1-facet-{{ checksum "facets.lock" }}`                                                | `~/.facet/cache`                                            | `commands/setup-mise.yml`             |
 | bun deps      | `v1-deps-{{ checksum "bun.lock" }}`                                                    | `node_modules`, `~/.bun/install/cache`                     | `commands/setup-mise.yml`             |
 | mint framework| `v1-mint-{{ checksum "bun.lock" }}`                                                    | `~/.mintlify`                                               | `commands/run-check.yml`              |
@@ -79,8 +79,9 @@ the jobs that run checks (`check`, `main-pipeline`) use it.
 - **mise tools** — every pipeline installs the tools declared in `mise.toml`,
   including `circleci`. The key keeps `MISE_ENV` so CI jobs and
   `MISE_ENV=release` jobs (`release`, `build-cli`, `publish-platform`, and
-  `finalize-cli`) use separate cache slots. The `mise.toml` checksum makes a
-  tool bump invalidate the cache. The restore happens before `mise install`,
+  `finalize-cli`) use separate cache slots. The `mise.toml` and
+  `mise.release.toml` checksums make a tool bump or release-overlay change
+  invalidate the cache. The restore happens before `mise install`,
   which becomes a near-instant no-op on a hit. (`mise.local.toml` is
   gitignored and absent in CI, so it's excluded from the key.)
 - **facets** — keyed on `facets.lock`, not `facets.json`. `facets.json` can
