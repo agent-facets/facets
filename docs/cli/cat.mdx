@@ -27,6 +27,10 @@ $EDITOR "$(facet cat --path cowsay README.md)" # open the installed file in your
   Print the location of the file on this machine instead of its content. The file is not opened. Only an installed facet has local files.
 </ResponseField>
 
+<ResponseField name="--json" type="boolean">
+  Print one JSON document instead of the raw file. See [JSON output](#json-output).
+</ResponseField>
+
 ## Exit codes
 
 | Code | Meaning |
@@ -42,6 +46,10 @@ On a terminal, control characters and invisible or direction-changing Unicode, i
 When the file came from the registry rather than this machine, a note on stderr says so on a terminal: `note: from the registry: mobbin v1.0.0 (not installed)`.
 
 Errors go to stderr, so stdout only ever holds the file.
+
+### JSON output
+
+With `--json`, `data` holds `name`, `version`, `origin`, the declared `path`, and the file's exact text as `content`. With `--path`, `data.localPath` replaces `content`. A selector that matches several assets, an MCP server, or nothing, and a binary or unsafe file, return an error code (`SELECTOR_AMBIGUOUS`, `SELECTOR_IS_SERVER`, `SELECTOR_NOT_FOUND`, `FILE_BINARY`, `FILE_UNSAFE`) with the same details the human message lists. A `--json` after `--` is a file name, not a flag. See the [JSON output contract](/cli/help#json-output).
 
 ## Details
 

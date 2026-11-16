@@ -68,6 +68,18 @@ export function toTerminalSafe(text: string): { text: string; escaped: number } 
   return { text: out, escaped }
 }
 
+/**
+ * Whether one code point is a character a terminal would act on or draw as
+ * nothing: a control, format, separator, or default-ignorable character,
+ * other than the presentation selectors. The same classes `toTerminalSafe`
+ * escapes, for writers that must keep the exact text (such as JSON).
+ */
+export function isHiddenCharacter(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0
+  if (code < 0x20 || code === 0x7f || code === BRAILLE_BLANK) return true
+  return HIDDEN.test(char) && !PRESENTATION_SELECTORS.has(code)
+}
+
 /** `toTerminalSafe`, keeping only the text. */
 export function safeText(text: string): string {
   return toTerminalSafe(text).text

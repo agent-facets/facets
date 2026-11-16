@@ -247,12 +247,6 @@ async function runJson(before: string[], after: string[], commands: Record<strin
     flags.json = true
     const args = [...parsed._.map(String), ...after]
     if (name === 'adapter' && args[0]) name = `adapter ${args[0] === 'install' ? 'add' : args[0]}`
-    if (!command.runJson) {
-      return writeJsonResult(name, {
-        ok: false,
-        error: { code: 'JSON_NOT_IMPLEMENTED', message: `JSON output is not yet available for ${name}.` },
-      })
-    }
     return writeJsonResult(name, await command.runJson(args, flags))
   } catch {
     return writeJsonResult(name, {

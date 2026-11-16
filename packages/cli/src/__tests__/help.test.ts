@@ -11,6 +11,7 @@ function helpFor(flags: Command['flags']): string {
       implemented: true,
       ...(flags ? { flags } : {}),
       run: async () => 0,
+      runJson: async () => ({ ok: true, data: null }),
     })
   })
 }

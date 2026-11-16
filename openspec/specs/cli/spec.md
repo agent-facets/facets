@@ -1415,6 +1415,8 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 
 Every registered command, alias, adapter subcommand, help and version invocation SHALL accept `--json` before the end-of-options separator. JSON mode SHALL suppress interactive prompts, live displays, browser launches, and editors. It SHALL NOT imply consent or overwrite permission. The CLI SHALL emit exactly one JSON document to stdout on every handled outcome, with `schemaVersion: "3"`, canonical `command`, `ok`, `warnings`, and exactly one of `data` or `error`. Error objects SHALL carry a stable `code` and `message` and MAY include `details`, `fix`, and `docsUrl`. Unexpected handled failures SHALL report a sanitized error and exit 2. Uncatchable termination cannot guarantee a document.
 
+A command's other output requirements describe invocations without `--json` unless they say otherwise. Tokens after the end-of-options separator SHALL be operands, so a `--json` there SHALL NOT select JSON mode. Every string value SHALL round-trip exactly through a JSON parser, and every character that the terminal-safety requirements make visible SHALL be written as a `\uXXXX` escape rather than raw, so the document is inert on a terminal.
+
 #### Scenario: JSON edit refuses an interactive workflow
 
 - **WHEN** a user runs `facet edit --json`
@@ -1431,6 +1433,26 @@ Every registered command, alias, adapter subcommand, help and version invocation
 
 - **WHEN** a user runs `facet rm --json`
 - **THEN** the JSON document SHALL identify its command as `remove`
+
+#### Scenario: Info reports a facet as data
+
+- **WHEN** a user runs `facet info <name> --json`
+- **THEN** `data` SHALL contain the facet's name, version, origin, and exact manifest description and author
+- **AND** `data` SHALL list its skills, commands, agents, servers, and files, with each asset's materialization when installed and the selector `facet cat` accepts
+- **AND** `data` SHALL report a registry owner and publisher only when they are verified
+
+#### Scenario: Cat returns file content inside the envelope
+
+- **WHEN** a user runs `facet cat <name> <selector> --json` for a text file
+- **THEN** `data.content` SHALL be the file's exact text and `data.path` its declared path
+- **AND** a binary, ambiguous, server, unknown, or unsafe selection SHALL produce a coded error instead of content
+
+#### Scenario: Publisher control characters are escaped
+
+- **WHEN** a facet description contains an ESC character or a bidirectional override
+- **AND** a user runs `facet info <name> --json`
+- **THEN** stdout SHALL NOT contain those characters raw
+- **AND** parsing the document SHALL return the description unchanged
 
 ### Requirement: Update emits machine-readable output on request
 

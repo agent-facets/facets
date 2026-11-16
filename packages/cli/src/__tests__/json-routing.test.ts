@@ -94,9 +94,47 @@ describe('JSON routing', () => {
     expect(unknown.document).toMatchObject({ command: 'missing', error: { code: 'UNKNOWN_COMMAND' } })
   })
 
-  test('fails closed for commands without a JSON handler', async () => {
-    const result = await invoke(['--json', 'demo'], { demo: { ...demo, runJson: undefined } })
-    expect(result.document).toMatchObject({ ok: false, error: { code: 'JSON_NOT_IMPLEMENTED' } })
+  test('--json before `--` selects JSON; operands after it reach the handler', async () => {
+    const result = await invoke(['demo', 'cowsay', '--json', '--', '--help'], { demo })
+    expect(result.document).toMatchObject({ ok: true, data: { args: ['cowsay', '--help'] } })
+  })
+
+  test('--json after `--` is an operand, not an output mode', async () => {
+    let seen: string[] | undefined
+    const human: Command = {
+      ...demo,
+      run: async (args) => {
+        seen = args
+        return 0
+      },
+    }
+    const code = await run(['demo', 'cowsay', '--', '--json'], { demo: human })
+    expect(code).toBe(0)
+    expect(seen).toEqual(['cowsay', '--json'])
+  })
+
+  test('hidden characters in strings are written as escapes and parse back exactly', async () => {
+    // Built from code points: the formatter rewrites `\u` escapes for these into invisible literals.
+    const hostile = ['a', 0x1b, '[2Jb', 0x202e, 'c', 0xe0041, 'd', 0x200b, 'e', 0x7f, 'f']
+      .map((part) => (typeof part === 'number' ? String.fromCodePoint(part) : part))
+      .join('')
+    let raw = ''
+    const original = process.stdout.write
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      raw += chunk.toString()
+      return true
+    }) as typeof process.stdout.write
+    try {
+      await run(['demo', '--json'], { demo: { ...demo, runJson: async () => ({ ok: true, data: { text: hostile } }) } })
+    } finally {
+      process.stdout.write = original
+    }
+    for (const code of [0x1b, 0x202e, 0xe0041, 0x200b, 0x7f]) {
+      expect(raw).not.toContain(String.fromCodePoint(code))
+    }
+    expect(raw).toContain('\\u202e')
+    expect(raw).toContain('\\udb40\\udc41')
+    expect(JSON.parse(raw).data.text).toBe(hostile)
   })
 
   test('sanitizes unexpected exceptions', async () => {

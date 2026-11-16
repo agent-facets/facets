@@ -154,8 +154,12 @@ export type Command = {
     flags: Record<string, unknown>,
     context?: { onJsonDocument?: (document: unknown) => void },
   ) => Promise<number>
-  /** Machine-readable execution. Missing handlers fail closed rather than running a human UI. */
-  runJson?: (args: string[], flags: Record<string, unknown>) => Promise<JsonResult>
+  /**
+   * Machine-readable execution for `--json`. Required: a command cannot be
+   * registered without deciding what its JSON result is, even if that
+   * result is a structured refusal (as `edit` returns).
+   */
+  runJson: (args: string[], flags: Record<string, unknown>) => Promise<JsonResult>
 }
 
 export const commands: Record<string, Command> = {

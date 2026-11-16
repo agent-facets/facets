@@ -41,6 +41,8 @@ Pass `--json` before or after a command to receive one JSON document on stdout. 
 }
 ```
 
+Control and invisible characters in strings, including terminal escapes and direction-changing Unicode, are written as `\uXXXX` escapes. A JSON parser returns the exact text; a terminal shows nothing it would act on.
+
 Failures replace `data` with an `error` containing a stable `code`, `message`, and optional `details`, `fix`, and `docsUrl`. Warnings have `code` and `message`. Explicit diagnostics and subprocess errors can appear on stderr. Check the exit code as well as `ok`.
 
 Schema 3 changes existing JSON output: move create, modify, build, update, and outdated success-field reads under `data`. Build failures now expose validation issues under `error.details.issues`; update failures use `error.message` and `error.details.message` instead of `error.what` and `error.detail`.

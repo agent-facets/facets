@@ -19,7 +19,14 @@ An installed facet is read from its installed copy. Any other facet is read from
 facet info cowsay                     # installed: from the local copy
 facet info mobbin                     # not installed: from the registry
 facet info @agentfacets/betterstack   # scoped names work as written
+facet info cowsay --json              # the summary as data
 ```
+
+## Flags
+
+<ResponseField name="--json" type="boolean">
+  Print the summary as one JSON document. See [JSON output](#json-output).
+</ResponseField>
 
 ## Exit codes
 
@@ -97,6 +104,36 @@ WEB: https://agentfacets.io/facets/mobbin
 - **Status column.** `installed as <name>` when `facets.json` aliases the asset, and `omitted` when it is not installed at all. See [Materialization](/specification/materialization).
 - **Hints.** Each skill, command, agent, and declared file has the [`facet cat`](/cli/cat) command that prints it. A skill's companion files are listed under it with `+`. For an installed facet, a binary file shows its size in place of a hint. A facet that is not installed is not downloaded, so every file has a hint, and `facet cat` reports a binary file if you select one.
 - **Files.** The manifest, `facet.json`, and top-level declared files, such as `README.md`. Print `facet.json` to check the summary against the raw manifest.
+
+### JSON output
+
+With `--json`, `data` holds the same facts with the manifest's exact strings, not the wrapped display text:
+
+```json expandable
+{
+  "name": "cowsay",
+  "version": "1.0.2",
+  "origin": { "kind": "installed", "from": "cache", "sourceKind": "registry", "authored": "1.0.2" },
+  "description": "What does the cow say?",
+  "author": "Cow Co",
+  "owner": null,
+  "publisher": null,
+  "skills": [
+    { "name": "cowsay-rules", "description": "Canonical cow format.", "disposition": { "kind": "authored" }, "selector": "cowsay-rules", "files": [] }
+  ],
+  "commands": [
+    { "name": "cowsay", "description": "Say it.", "disposition": { "kind": "aliased", "as": "moo" }, "selector": "commands/cowsay" }
+  ],
+  "agents": [],
+  "servers": [
+    { "name": "docs", "type": "http", "url": "https://mcp.example.com/docs", "resolvedUrl": "https://mcp.example.com/docs", "disposition": { "kind": "authored" } }
+  ],
+  "files": [{ "path": "facet.json", "selector": "facet.json", "binary": false }],
+  "webUrl": "https://agentfacets.io/facets/cowsay"
+}
+```
+
+`disposition` is `null` for a facet that is not installed. `owner` and `publisher` are set only when the registry verified them; `author` is the publisher's own text. `selector` is what [`facet cat`](/cli/cat) accepts, and is `null` for a binary file. An invalid `FACET_WEB_URL` gives `webUrl: null` and a warning. See the [JSON output contract](/cli/help#json-output).
 
 ## Details
 

@@ -21,6 +21,7 @@ function captureRegistry(flags?: Command['flags']): {
         seen = { args, flags: f }
         return 0
       },
+      runJson: async () => ({ ok: true, data: null }),
     },
   }
   return { registry, captured: () => seen }
