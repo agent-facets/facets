@@ -1,5 +1,17 @@
 # agent-facets
 
+## 0.37.0
+
+### Minor Changes
+
+- [#624](https://github.com/agent-facets/facets/pull/624) [`25bbf72`](https://github.com/agent-facets/facets/commit/25bbf7255187f765aca218e8f400bb1e2d0b2b7d) Thanks [@shaundreamsincode](https://github.com/shaundreamsincode)! - Add `facet info` and `facet cat`. `facet info <name>` summarizes an installed facet: its description and author, every skill, command, agent, and MCP server with its description, any alias or omission from `facets.json`, declared files, and the `facet cat` command for each. `facet cat <name> <asset-or-path>` prints one skill, command, agent, or declared file exactly as installed, or its location with `--path`. Both read the verified local copy and never contact the registry, and both show facet text with terminal control characters made visible.
+- [#625](https://github.com/agent-facets/facets/pull/625) [`e66b787`](https://github.com/agent-facets/facets/commit/e66b787891790a302c541f4069ed62aa76e7ca4d) Thanks [@shaundreamsincode](https://github.com/shaundreamsincode)! - `facet info` and `facet cat` now work for facets the project has not installed, reading the registry's latest version so you can see what a facet contains before adding it. `facet info` downloads no files, and shows the account that published the version, verified by the registry, apart from the facet's self-declared author. An installed registry facet whose local copy is missing or fails its integrity check is read from the registry at the locked version, checked against `facets.lock`.
+
+### Patch Changes
+
+- [#624](https://github.com/agent-facets/facets/pull/624) [`25bbf72`](https://github.com/agent-facets/facets/commit/25bbf7255187f765aca218e8f400bb1e2d0b2b7d) Thanks [@shaundreamsincode](https://github.com/shaundreamsincode)! - Arguments after `--` are now always treated as positional, so a file whose name starts with `-` can be selected (`facet cat <name> -- --help`). Loading a facet's `facet.json` now refuses anything that is not a regular file, such as a named pipe, instead of waiting on it.
+    Error messages from every command now show terminal control characters as visible escapes. Before, a crafted `facets.json` could send escape sequences to the terminal through the error that `facet list`, `facet outdated`, and `facet update` print for it.
+
 ## 0.36.5
 
 ### Patch Changes
