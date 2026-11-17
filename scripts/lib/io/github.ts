@@ -54,5 +54,7 @@ export const githubIo = {
       '-F',
       'return_run_details=true',
     ]),
+  workflowRuns: (workflow: string, tag: string) =>
+    $`gh run list --repo ${GITHUB_REPO} --workflow ${workflow} --branch ${tag} --event workflow_dispatch --limit 100 --json databaseId,headSha,status,conclusion`.nothrow(),
   workflowWatch: (runId: string) => $`gh run watch ${runId} --repo ${GITHUB_REPO} --exit-status`.nothrow(),
 }

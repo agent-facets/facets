@@ -2,6 +2,10 @@
 
 This directory contains the release and CI automation scripts for the facets monorepo.
 
+CLI archive delivery reuses successful or unfinished Actions runs for the same
+tag and commit, and retries transient watcher failures without redispatching.
+See `release-cli/README.md` for retry limits and immutable-release handling.
+
 ## Directory Structure
 
 ```

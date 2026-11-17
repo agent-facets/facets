@@ -8,7 +8,9 @@ have been uploaded, digest-verified, and GitHub/Sigstore-provenance-verified;
 see `../release-cli/README.md`. CircleCI dispatches the archive workflow after
 npm readiness with its freshly minted GitHub App token, watches the exact run
 ID GitHub returns, and sends the successful-release Slack notification only
-after that run succeeds.
+after that run succeeds. CLI retries reuse successful or unfinished runs for the
+same tag and commit, with bounded retries for transient watcher failures rather
+than duplicate archive builds.
 
 The CLI release tooling can render Homebrew formulas from verified archive
 checksums. Automated tap delivery is planned but not implemented, and will

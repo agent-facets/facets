@@ -98,7 +98,16 @@ The GitHub Actions workflow passes its scoped `GITHUB_TOKEN` as `GH_TOKEN` and
 selects `FACET_RELEASE_AUTH=workflow-token`; it never receives CircleCI's
 GitHub App credentials. The CircleCI dispatcher retains App-token minting only
 to dispatch and watch the exact workflow run ID returned by GitHub's dispatch
-API. The dispatcher explicitly forwards that freshly minted token to its GitHub
+API. Before dispatching, it looks for runs of that workflow dispatched for the
+same tag and resolved tag commit (the most recent 100 runs). An existing successful
+run takes precedence over failed duplicates; otherwise it resumes an unfinished
+run. Inspection failures fail closed instead of risking a duplicate delivery.
+Only when neither exists does it dispatch a new run. The watcher retries transient
+404/429/5xx and transport failures up to four times with 2/4/8/16-second backoff,
+always watching the same run ID. Workflow failures and permission errors are not
+retried. This avoids rebuilding timestamp-bearing archives against an already
+published immutable release when CircleCI is rerun.
+The dispatcher explicitly forwards that freshly minted token to its GitHub
 CLI subprocess. If the App lacks workflow-dispatch permission, delivery fails
 before a release is published; grant that external permission only through the
 approved GitHub App administration process.

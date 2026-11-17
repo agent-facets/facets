@@ -11,6 +11,7 @@ export type DispatchAttestedReleaseResult =
   | { ok: true; tag: string; runId: string }
   | { ok: false; code: 'missing-tag' }
   | { ok: false; code: 'github-auth-failed' }
+  | { ok: false; code: 'workflow-inspect-failed'; tag: string }
   | { ok: false; code: 'workflow-dispatch-failed'; tag: string }
   | { ok: false; code: 'workflow-dispatch-response-invalid'; tag: string }
   | { ok: false; code: 'workflow-run-failed'; tag: string; runId: string }
@@ -42,6 +43,54 @@ function parseDispatchedRunId(stdout: Buffer): string | undefined {
   }
 }
 
+type WorkflowRun = { databaseId: number; headSha: string; status: string; conclusion: string }
+
+function reusableRun(stdout: Buffer, sha: string): { ok: true; runId?: string } | { ok: false } {
+  try {
+    const runs: unknown = JSON.parse(stdout.toString())
+    if (
+      !Array.isArray(runs) ||
+      !runs.every(
+        (run) =>
+          run &&
+          Number.isSafeInteger(run.databaseId) &&
+          run.databaseId > 0 &&
+          typeof run.headSha === 'string' &&
+          typeof run.status === 'string' &&
+          typeof run.conclusion === 'string',
+      )
+    ) {
+      return { ok: false }
+    }
+    const matching = (runs as WorkflowRun[]).filter((run) => run.headSha === sha)
+    // A later failed duplicate must not hide an already successful delivery.
+    const run =
+      matching.find((run) => run.status === 'completed' && run.conclusion === 'success') ??
+      matching.find((run) => run.status !== 'completed')
+    return { ok: true, runId: run ? String(run.databaseId) : undefined }
+  } catch {
+    return { ok: false }
+  }
+}
+
+async function watchWithRetry(runId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const watched = await io.gh.workflowWatch(runId)
+    if (watched.exitCode === 0) return true
+    const diagnostic = watched.stderr.toString()
+    // Retry transport/visibility failures, never a completed workflow failure.
+    if (
+      !/HTTP (?:404|429|5\d\d)\b|TLS handshake timeout|i\/o timeout|connection reset|unexpected EOF/i.test(diagnostic)
+    ) {
+      return false
+    }
+    if (attempt === 4) return false
+    io.console.log(`GitHub run ${runId} is temporarily unavailable; retrying watch (${attempt + 1}/4).`)
+    await io.shell.sleep(2000 * 2 ** attempt)
+  }
+  return false
+}
+
 export async function dispatchAttestedRelease(
   options: DispatchAttestedReleaseOptions = {},
 ): Promise<DispatchAttestedReleaseResult> {
@@ -54,13 +103,26 @@ export async function dispatchAttestedRelease(
     return { ok: false, code: 'github-auth-failed' }
   }
 
-  const dispatch = await io.gh.workflowDispatch(WORKFLOW, tag, tag)
-  if (dispatch.exitCode !== 0) return { ok: false, code: 'workflow-dispatch-failed', tag }
-  const runId = parseDispatchedRunId(dispatch.stdout)
-  if (!runId) return { ok: false, code: 'workflow-dispatch-response-invalid', tag }
+  const commit = await io.git.resolveCommit(tag)
+  const sha = commit.stdout.toString().trim()
+  if (commit.exitCode !== 0 || !/^[a-f0-9]{40}$/.test(sha)) {
+    return { ok: false, code: 'workflow-inspect-failed', tag }
+  }
+  const listed = await io.gh.workflowRuns(WORKFLOW, tag)
+  if (listed.exitCode !== 0) return { ok: false, code: 'workflow-inspect-failed', tag }
+  const reusable = reusableRun(listed.stdout, sha)
+  if (!reusable.ok) return { ok: false, code: 'workflow-inspect-failed', tag }
 
-  const watched = await io.gh.workflowWatch(runId)
-  if (watched.exitCode !== 0) return { ok: false, code: 'workflow-run-failed', tag, runId }
+  let runId = reusable.runId
+  if (runId) {
+    io.console.log(`Reusing GitHub Actions run ${runId} for ${tag} (${sha}).`)
+  } else {
+    const dispatch = await io.gh.workflowDispatch(WORKFLOW, tag, tag)
+    if (dispatch.exitCode !== 0) return { ok: false, code: 'workflow-dispatch-failed', tag }
+    runId = parseDispatchedRunId(dispatch.stdout)
+    if (!runId) return { ok: false, code: 'workflow-dispatch-response-invalid', tag }
+  }
+  if (!(await watchWithRetry(runId))) return { ok: false, code: 'workflow-run-failed', tag, runId }
   await (options.notify ?? notifyAttestedRelease)(tag)
   return { ok: true, tag, runId }
 }
@@ -77,6 +139,9 @@ export function renderDispatchAttestedReleaseResult(result: DispatchAttestedRele
       break
     case 'github-auth-failed':
       io.console.error('Failed to authenticate with GitHub to dispatch attested CLI archive delivery.')
+      break
+    case 'workflow-inspect-failed':
+      io.console.error(`Failed to inspect the tag commit or existing archive workflow runs for ${result.tag}.`)
       break
     case 'workflow-dispatch-failed':
       io.console.error(
