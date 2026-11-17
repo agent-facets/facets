@@ -5,6 +5,45 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-11-16" description="agent-facets 0.37.1 adds facet info and facet cat to preview facets before you install them" tags={["CLI", "New Feature", "Fix"]} rss={{
+  title: "agent-facets 0.37.1: facet info and facet cat",
+  description: "agent-facets@0.37.1 adds facet info and facet cat. facet info <name> summarizes a facet: its description, author, skills, commands, agents, MCP servers, declared files, and the facet cat command for each. facet cat <name> <asset-or-path> prints one skill, command, agent, or declared file, or its location with --path. Installed facets are read from your verified local copy. Facets you have not installed are read from the registry's latest version, and facet info shows the registry-verified publisher. Arguments after -- are now always positional, and error messages show terminal control characters as visible escapes. 0.37.0 never reached npm, so 0.37.1 is the first release with these changes. Upgrade with facet self-update."
+}}>
+  ## Preview facets with `facet info` and `facet cat`
+
+  `agent-facets@0.37.1` is out. Two new commands let you see what a facet
+  contains, before or after you install it.
+
+  ```sh
+  facet info mobbin                  # summarize a facet and its assets
+  facet cat cowsay cowsay-rules      # print one skill, command, agent, or file
+  facet cat --path cowsay README.md  # print where an installed file lives
+  ```
+
+  - **Before you install.** For a facet the project has not installed,
+    both commands read the registry's latest version. `facet info`
+    downloads no files and shows the publisher the registry verified.
+  - **After you install.** Installed facets are read from your verified
+    local copy. `facet info` also shows aliases and omissions from
+    `facets.json`.
+  - **Safe to read.** Terminal control characters in facet text are shown
+    as visible escapes.
+
+  See [`facet info`](/cli/info) and [`facet cat`](/cli/cat).
+
+  ## Fixes
+
+  - Arguments after `--` are always positional, so you can select a file
+    whose name starts with `-`: `facet cat <name> -- -notes.md`.
+  - Error messages from every command show terminal control characters as
+    visible escapes. A crafted `facets.json` can no longer send escape
+    sequences to your terminal through `facet list`, `facet outdated`, or
+    `facet update`.
+
+  `0.37.0` never reached npm, so `0.37.1` is the first release with these
+  changes. Upgrade with [`facet self-update`](/cli/self-update).
+</Update>
+
 <Update label="2026-10-25" description="Install and self-update the facet CLI with mise, plus verifiable release archives" tags={["CLI", "New Feature", "Improvement"]}>
   ## Install with mise
 
