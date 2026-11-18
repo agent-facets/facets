@@ -7,7 +7,7 @@ rss: true
 
 <Update label="2026-11-16" description="agent-facets 0.37.1 adds facet info and facet cat to preview facets before you install them" tags={["CLI", "New Feature", "Fix"]} rss={{
   title: "agent-facets 0.37.1: facet info and facet cat",
-  description: "agent-facets@0.37.1 adds facet info and facet cat. facet info <name> summarizes a facet: its description, author, skills, commands, agents, MCP servers, declared files, and the facet cat command for each. facet cat <name> <asset-or-path> prints one skill, command, agent, or declared file, or its location with --path. Installed facets are read from your verified local copy. Facets you have not installed are read from the registry's latest version, and facet info shows the registry-verified publisher. Arguments after -- are now always positional, and error messages show terminal control characters as visible escapes. 0.37.0 never reached npm, so 0.37.1 is the first release with these changes. Upgrade with facet self-update."
+  description: "agent-facets@0.37.1 adds facet info and facet cat. facet info <name> summarizes a facet: its description, author, skills, commands, agents, MCP servers, declared files, and the facet cat command for each. facet cat <name> <asset-or-path> prints one skill, command, agent, or declared file, or its location with --path. Installed facets are read from your local copy once it passes its integrity check. If a registry facet's copy is missing or fails the check, the locked version is downloaded from the registry and verified against facets.lock. Facets you have not installed are read from the registry's latest version, and facet info shows the registry-verified publisher. Arguments after -- are now always positional, and error messages show terminal control characters as visible escapes. 0.37.0 never reached npm, so 0.37.1 is the first release with these changes. Upgrade with facet self-update."
 }}>
   ## Preview facets with `facet info` and `facet cat`
 
@@ -23,9 +23,11 @@ rss: true
   - **Before you install.** For a facet the project has not installed,
     both commands read the registry's latest version. `facet info`
     downloads no files and shows the publisher the registry verified.
-  - **After you install.** Installed facets are read from your verified
-    local copy. `facet info` also shows aliases and omissions from
-    `facets.json`.
+  - **After you install.** Installed facets are read from your local copy
+    once it passes its integrity check. If a registry facet's copy is
+    missing or fails the check, the locked version is downloaded from the
+    registry and verified against `facets.lock`. `facet info` also shows
+    aliases and omissions from `facets.json`.
   - **Safe to read.** Terminal control characters in facet text are shown
     as visible escapes.
 
