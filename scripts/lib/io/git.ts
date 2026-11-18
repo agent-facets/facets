@@ -5,6 +5,7 @@
 import { $ } from 'bun'
 
 export const gitIo = {
+  resolveCommit: (ref: string) => $`git rev-parse --verify ${`${ref}^{commit}`}`.nothrow(),
   diff: () => $`git diff --quiet`.nothrow(),
   diffCached: () => $`git diff --cached --quiet`.nothrow(),
   config: (key: string, value: string) => $`git config ${key} ${value}`,
