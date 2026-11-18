@@ -1,5 +1,5 @@
 import { FacetManifestSchema } from '@agent-facets/protocol'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { DEFAULT_TOPIC, INSTRUCTION_TOPICS, isInstructionTopic, promptFor } from '../../prompts/index.ts'
 import { writeCliError } from '../../util/errors.ts'
 
@@ -11,11 +11,35 @@ import { writeCliError } from '../../util/errors.ts'
  * facets. The overview (default) opens with a generated index of every topic;
  * topics: overview (default), manifest, authoring, usage.
  */
-export const instructionsCommand: Command = {
+export const instructionsCommand = defineCommand({
   name: 'instructions',
   description: 'Print CLI usage instructions FOR AI AGENTS',
   usage: '[topic]',
   implemented: true,
+  runJson: async (args) => {
+    const topic = args[0] ?? DEFAULT_TOPIC
+    if (args.length > 1 || !isInstructionTopic(topic)) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: `Unknown or invalid instructions topic "${topic}".`,
+          details: { topics: INSTRUCTION_TOPICS },
+          fix: `run: facet instructions [${INSTRUCTION_TOPICS.join('|')}]`,
+        },
+      }
+    }
+    return {
+      ok: true,
+      data: {
+        topic,
+        text: promptFor(topic),
+        ...(topic === 'manifest'
+          ? { schema: FacetManifestSchema.toJsonSchema({ fallback: { predicate: (ctx) => ctx.base } }) }
+          : {}),
+      },
+    }
+  },
   run: async (args: string[]): Promise<number> => {
     const topic = args[0] ?? DEFAULT_TOPIC
 
@@ -46,4 +70,4 @@ export const instructionsCommand: Command = {
 
     return 0
   },
-}
+})

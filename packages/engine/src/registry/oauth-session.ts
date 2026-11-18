@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { Stats } from 'node:fs'
 import { lstat, readlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -20,6 +20,7 @@ import { getRegistryBaseUrl } from './http.ts'
 import {
   deleteOAuthSession,
   isOAuthStorePlatformSupported,
+  listOAuthAttemptIds,
   type OAuthSession,
   type OAuthSessionBinding,
   type OAuthSessionLock,
@@ -31,6 +32,7 @@ import {
   readOAuthSessionSnapshot,
   saveOAuthSession,
   type UncertainOAuthSession,
+  withOAuthAttemptLock,
   withOAuthSessionLock,
 } from './oauth-store.ts'
 import type { WireAuthMeResponse } from './wire.ts'
@@ -94,6 +96,241 @@ interface LoginContext {
   readonly challenge: Readonly<DeviceAuthorizationChallenge>
   readonly expectedSession: Readonly<OAuthSession> | null
   readonly expectedRevision: number | null
+}
+
+type DurableLoginFailure =
+  | RegistrySessionFailure
+  | { code: 'LOGIN_NOT_FOUND' | 'LOGIN_BUSY' | 'LOGIN_RESTART_REQUIRED' | 'INVALID_LOGIN_ID' }
+  | { code: 'LOGIN_STATE_UNCERTAIN' }
+
+type DurableLoginResult<T> = { ok: true; value: T } | { ok: false; error: DurableLoginFailure }
+
+interface DurableAttempt {
+  version: 1
+  id: string
+  state: 'pending' | 'completing'
+  binding: OAuthSessionBinding
+  deviceCode: string
+  userCode: string
+  expiresAt: number
+  intervalSeconds: number
+  expectedRevision: number | null
+  sessionFingerprint: string
+}
+
+function snapshotFingerprint(session: Readonly<OAuthSession> | null): string {
+  return createHash('sha256').update(JSON.stringify(session)).digest('hex')
+}
+
+/** Start a login whose private challenge can be completed by another process. */
+export async function beginDurableCliLogin(options: RegistrySessionOptions = {}): Promise<
+  DurableLoginResult<{
+    loginId: string
+    registry: string
+    display: Readonly<DeviceAuthorizationDisplay>
+    expiresAt: number
+  }>
+> {
+  const started = await beginCliLogin(options)
+  if (!started.ok) return started
+  const context = loginAttempts.get(started.value)
+  if (context === undefined) return { ok: false, error: { code: 'UNEXPECTED_FAILURE' } }
+  const id = randomBytes(16).toString('hex')
+  const attempt: DurableAttempt = {
+    version: 1,
+    id,
+    state: 'pending',
+    binding: bindingFor(context.config),
+    deviceCode: context.challenge.secret.deviceCode,
+    userCode: context.challenge.display.userCode,
+    expiresAt: context.challenge.expiresAt,
+    intervalSeconds: context.challenge.intervalSeconds,
+    expectedRevision: context.expectedRevision,
+    sessionFingerprint: snapshotFingerprint(context.expectedSession),
+  }
+  await cleanupExpiredAttempts(attempt.binding, options)
+  const stored = await withOAuthAttemptLock(
+    attempt.binding,
+    id,
+    async (store) => {
+      const existing = await store.read()
+      if (!existing.ok) return existing
+      if (existing.value !== null) {
+        return { ok: false, error: { code: 'INVALID_SESSION', path: '<attempt>', issues: ['attempt already exists'] } }
+      }
+      return store.write(attempt)
+    },
+    { platform: options.platform, signal: options.signal },
+  )
+  loginAttempts.delete(started.value)
+  if (!stored.ok) return storeFailure(stored.error)
+  return {
+    ok: true,
+    value: {
+      loginId: id,
+      registry: context.config.registryOrigin,
+      display: started.value.display,
+      expiresAt: started.value.expiresAt,
+    },
+  }
+}
+
+async function cleanupExpiredAttempts(binding: OAuthSessionBinding, options: RegistrySessionOptions): Promise<void> {
+  const ids = await listOAuthAttemptIds(binding, { platform: options.platform, signal: options.signal })
+  if (!ids.ok) return
+  for (const id of ids.value) {
+    await withOAuthAttemptLock(
+      binding,
+      id,
+      async (store) => {
+        const read = await store.read()
+        if (!read.ok) return read
+        if (isDurableAttempt(read.value, id, binding) && read.value.expiresAt <= now(options)) return store.remove()
+        return { ok: true, value: undefined }
+      },
+      { platform: options.platform, signal: options.signal, lockTimeoutMs: 1 },
+    )
+  }
+}
+
+function isDurableAttempt(value: unknown, id: string, binding: OAuthSessionBinding): value is DurableAttempt {
+  if (!isRecord(value) || !isRecord(value.binding)) return false
+  const keys = [
+    'version',
+    'id',
+    'state',
+    'binding',
+    'deviceCode',
+    'userCode',
+    'expiresAt',
+    'intervalSeconds',
+    'expectedRevision',
+    'sessionFingerprint',
+  ]
+  return (
+    Object.keys(value).length === keys.length &&
+    keys.every((key) => key in value) &&
+    value.version === 1 &&
+    value.id === id &&
+    (value.state === 'pending' || value.state === 'completing') &&
+    JSON.stringify(value.binding) === JSON.stringify(binding) &&
+    typeof value.deviceCode === 'string' &&
+    value.deviceCode.length > 0 &&
+    value.deviceCode.length <= 4096 &&
+    typeof value.userCode === 'string' &&
+    value.userCode.length > 0 &&
+    value.userCode.length <= 128 &&
+    Number.isSafeInteger(value.expiresAt) &&
+    typeof value.intervalSeconds === 'number' &&
+    Number.isSafeInteger(value.intervalSeconds) &&
+    value.intervalSeconds >= 5 &&
+    value.intervalSeconds <= 300 &&
+    (value.expectedRevision === null ||
+      (Number.isSafeInteger(value.expectedRevision) && Number(value.expectedRevision) > 0)) &&
+    typeof value.sessionFingerprint === 'string' &&
+    /^[a-f0-9]{64}$/.test(value.sessionFingerprint)
+  )
+}
+
+/** Claim one attempt once; an interrupted or ambiguous exchange is never replayed. */
+export async function completeDurableCliLogin(
+  id: string,
+  options: RegistrySessionOptions = {},
+): Promise<DurableLoginResult<{ profile: Readonly<WireAuthMeResponse>; registry: string; cleanupFailed: boolean }>> {
+  if (!/^[a-f0-9]{32}$/.test(id)) return { ok: false, error: { code: 'INVALID_LOGIN_ID' } }
+  if (!isOAuthStorePlatformSupported(options.platform)) return unsupportedPlatform()
+  const selected = selectedOrigin(options)
+  if (!selected.ok) return selected
+  const configured = await configuredFor(selected.value, options)
+  if (!configured.ok) return configured
+  const config = configured.value
+  const binding = bindingFor(config)
+  let sessionMayHaveBeenSaved = false
+  const result = await withOAuthAttemptLock<
+    DurableLoginResult<{ profile: Readonly<WireAuthMeResponse>; registry: string; cleanupFailed: boolean }>
+  >(
+    binding,
+    id,
+    async (store) => {
+      const read = await store.read()
+      if (!read.ok) return read
+      const value = read.value
+      if (value === null) return { ok: true, value: { ok: false, error: { code: 'LOGIN_NOT_FOUND' } } as const }
+      if (!isDurableAttempt(value, id, binding) || value.state !== 'pending') {
+        return { ok: true, value: { ok: false, error: { code: 'LOGIN_RESTART_REQUIRED' } } as const }
+      }
+      if (value.expiresAt <= now(options)) {
+        const removed = await store.remove()
+        if (!removed.ok) return removed
+        return { ok: true, value: { ok: false, error: { code: 'LOGIN_RESTART_REQUIRED' } } as const }
+      }
+      const claimed = await store.write({ ...value, state: 'completing' })
+      if (!claimed.ok) return claimed
+      const uri = `${config.verificationOrigin}/device`
+      const challenge: DeviceAuthorizationChallenge = {
+        display: {
+          userCode: value.userCode,
+          verificationUri: uri,
+          verificationUriComplete: `${uri}?${new URLSearchParams({ user_code: value.userCode })}`,
+        },
+        secret: { deviceCode: value.deviceCode },
+        expiresAt: value.expiresAt,
+        intervalSeconds: value.intervalSeconds,
+      }
+      const polled = await pollDeviceAuthorization(config, challenge, {
+        ...deviceOptions(options),
+        conservativePolling: true,
+      })
+      if (!polled.ok) {
+        const removed = await store.remove()
+        if (!removed.ok) return removed
+        return {
+          ok: true,
+          value: { ok: false, error: { code: 'DEVICE_AUTH_FAILED', reason: polled.error.code } } as const,
+        }
+      }
+      let saveAttempted = false
+      const committed = await locked<Readonly<WireAuthMeResponse>>(binding, options, async (lock) => {
+        const snapshot = await readOAuthSessionSnapshot(binding)
+        if (!snapshot.ok) return storeFailure(snapshot.error)
+        if (
+          snapshot.value.revision !== value.expectedRevision ||
+          snapshotFingerprint(snapshot.value.session) !== value.sessionFingerprint
+        ) {
+          return failure({ code: 'SESSION_CHANGED' })
+        }
+        if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+        const profile = await verifyProfile(config, polled.value.accessToken, options)
+        if (!profile.ok) return profile
+        if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+        const next = readySession(binding, polled.value, profile.value.user_uuid, (snapshot.value.revision ?? 0) + 1)
+        saveAttempted = true
+        sessionMayHaveBeenSaved = true
+        const saved = await saveOAuthSession(next, value.expectedRevision, lock)
+        if (!saved.ok) return storeFailure(saved.error)
+        return success(profile.value)
+      })
+      if (!committed.ok) {
+        if (saveAttempted) return { ok: true, value: { ok: false, error: { code: 'LOGIN_STATE_UNCERTAIN' } } as const }
+        return { ok: true, value: committed }
+      }
+      const removed = await store.remove()
+      return {
+        ok: true,
+        value: {
+          ok: true,
+          value: { profile: committed.value, registry: config.registryOrigin, cleanupFailed: !removed.ok },
+        } as const,
+      }
+    },
+    { platform: options.platform, signal: options.signal, lockTimeoutMs: 50 },
+  )
+  if (!result.ok) {
+    if (sessionMayHaveBeenSaved) return { ok: false, error: { code: 'LOGIN_STATE_UNCERTAIN' } }
+    if (result.error.code === 'LOCK_TIMEOUT') return { ok: false, error: { code: 'LOGIN_BUSY' } }
+    return storeFailure(result.error)
+  }
+  return result.value
 }
 
 export type CliLogoutOutcome =

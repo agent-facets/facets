@@ -83,8 +83,10 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
 
 ```json expandable
 {
-  "schemaVersion": "1",
+  "schemaVersion": "3",
+  "command": "update",
   "ok": true,
+  "data": {
   "applied": true,
   "facets": [
     {
@@ -98,6 +100,8 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
     }
   ],
   "counts": { "updated": 1, "current": 0, "held": 0, "unsupported": 0 }
+  },
+  "warnings": []
 }
 ```
 
@@ -133,17 +137,20 @@ Each facet's `outcome` is one of four values:
 
 `counts` tallies how many facets landed in each outcome, always summing to `facets.length`.
 
-Every refusal or anticipated failure under `--json` writes a single document to stdout, nothing to stderr, and exits `1`. Recovery details, including affected files and MCP servers, appear in `error.detail`. Captured from a real `facet update --json --interactive` run:
+Every refusal or anticipated failure under `--json` writes a single document to stdout and exits `1`. Recovery details, including affected files and MCP servers, appear in `error.details.message`. See the [JSON output contract](/cli/help#json-output).
 
 ```json expandable
 {
-  "schemaVersion": "1",
+  "schemaVersion": "3",
+  "command": "update",
   "ok": false,
   "error": {
-    "what": "facet update --json cannot be combined with --interactive",
-    "detail": "the picker writes to stdout, which would corrupt the JSON document",
+    "code": "UPDATE_FAILED",
+    "message": "facet update --json cannot be combined with --interactive",
+    "details": { "message": "the picker writes to stdout, which would corrupt the JSON document" },
     "fix": "run 'facet update --json --dry-run' to see what would change without prompting"
-  }
+  },
+  "warnings": []
 }
 ```
 
@@ -151,13 +158,16 @@ A project-level failure takes the same shape. Captured from a real run against a
 
 ```json expandable
 {
-  "schemaVersion": "1",
+  "schemaVersion": "3",
+  "command": "update",
   "ok": false,
   "error": {
-    "what": "this project cannot be checked for updates yet",
-    "detail": "cowsay: facets.json declares \"???\" (unrecognized source specifier \"???\")",
+    "code": "UPDATE_FAILED",
+    "message": "this project cannot be checked for updates yet",
+    "details": { "message": "cowsay: facets.json declares \"???\" (unrecognized source specifier \"???\")" },
     "fix": "run 'facet install' to bring facets.lock in line with facets.json, then update again"
-  }
+  },
+  "warnings": []
 }
 ```
 

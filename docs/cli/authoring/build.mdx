@@ -61,11 +61,7 @@ A scoped identity nests, so `@acme/cowsay` at `1.0.0` lands at `dist/@acme/cowsa
 
 ### JSON output
 
-The document carries `schemaVersion`, `ok`, and `verified`. On success it reports `name`, `version`, `facetVersion`, `files` (the complete archive entry listing), `integrity`, and any `warnings`. On failure it reports `errors`, each with a `message` and a `path`.
-
-<Warning>
-  `schemaVersion` is `"2"`. Consumers pinned to schema `1` must migrate: the old `assets` field is gone, replaced by `files`.
-</Warning>
+On success `data` contains `verified`, `name`, `version`, `facetVersion`, `files` (the complete archive entry listing), and `integrity`. Validation failures include `error.details.issues`, each with a `message` and a `path`. See the [JSON output contract](/cli/help#json-output) for the schema and migration notes.
 
 ## Details
 

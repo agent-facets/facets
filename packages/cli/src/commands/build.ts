@@ -7,7 +7,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../commands.ts'
+import { defineCommand } from '../command.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
 import {
   buildFailureMessages,
@@ -27,7 +27,7 @@ import { resolveTargetDir } from './resolve-dir.ts'
  */
 const BUILD_JSON_SCHEMA_VERSION = '2'
 
-export const buildCommand: Command = {
+export const buildCommand = defineCommand({
   name: 'build',
   description: 'Build a facet from the current directory',
   usage: '[directory]',
@@ -41,12 +41,56 @@ export const buildCommand: Command = {
       type: 'boolean',
       description: 'Validate the facet without writing any output (no dist/ writes)',
     },
-    json: {
-      type: 'boolean',
-      description: 'Emit machine-readable JSON to stdout instead of the interactive view',
-    },
   },
-  run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
+  runJson: async (args, flags) => {
+    if (args.length > 1) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'build accepts at most one directory' } }
+    }
+    const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) return { ok: false, error: { code: 'INVALID_DIRECTORY', message: resolved.message } }
+    const loaded = await loadInstalledAdapters()
+    if (!loaded.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'ADAPTER_LOAD_FAILED',
+          message: 'Could not load installed adapters',
+          details: { issues: loaded.failures.map(describeInstalledAdapterFailure) },
+        },
+      }
+    }
+    const verified = flags.verify === true
+    const result = await runBuildPipeline(resolved.dir, loaded.adapters)
+    const warnings = result.warnings.map((message) => ({ code: 'BUILD_WARNING', message }))
+    if (!result.ok) {
+      const issues =
+        result.kind === 'validation'
+          ? result.errors.map((error) => ({ message: error.message, path: error.path }))
+          : result.failures.map((failure) => ({
+              message: compatibilityFailureMessage(failure),
+              path: `adapters.${failure.adapter}`,
+            }))
+      return {
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: 'Facet validation failed', details: { verified, issues } },
+        warnings,
+      }
+    }
+    if (!verified) await writeBuildOutput(result, resolved.dir, { emitManifest: flags['emit-manifest'] === true })
+    return {
+      ok: true,
+      data: {
+        verified,
+        name: result.data.name,
+        version: result.data.version,
+        facetVersion: result.facetVersion,
+        files: Object.keys(result.fileHashes).sort(),
+        integrity: result.integrity,
+      },
+      warnings,
+    }
+  },
+  run: async (args, flags) => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {
       console.error(resolved.message)
@@ -125,7 +169,7 @@ export const buildCommand: Command = {
       return 1
     }
   },
-}
+})
 
 /**
  * Emit the versioned JSON build document to stdout. `verified` is true when

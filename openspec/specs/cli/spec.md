@@ -1411,6 +1411,64 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 - **THEN** the command SHALL fail before mutation with the complete consent information
 - **AND** when `--accept-mcp` is supplied, the command SHALL proceed without prompting if the work is otherwise valid
 
+### Requirement: Commands accept only declared, documented options
+
+Every option spelling a command accepts SHALL be declared once with help text: canonical long names, short aliases, negative spellings such as `--no-browser`, value placeholders such as `--complete <login-id>`, and option families such as `modify`'s `--adapter-<name> <json>`. Text help and JSON help SHALL both be generated from those declarations and SHALL list every accepted spelling. A negative spelling SHALL be accepted only where declared; `--no-<flag>` SHALL NOT be implied. Boolean options SHALL also accept `--<flag>=true` and `--<flag>=false`. An unknown option, an undeclared negative, a repeated single-value option, a missing value, or a non-boolean value for a boolean option SHALL fail with exit code 1 before the command runs, as one `INVALID_ARGUMENTS` document under `--json` and as an error on stderr otherwise.
+
+#### Scenario: A typo does not run the command
+
+- **WHEN** a user runs `facet install --frozen-lockfil`
+- **THEN** the process SHALL exit with code 1 without running the install
+- **AND** the project SHALL be unchanged
+
+#### Scenario: Help lists negative spellings
+
+- **WHEN** a user runs `facet login --help`
+- **THEN** the options SHALL list both `--browser` and `--no-browser`, each with its own description
+
+### Requirement: Commands provide non-interactive JSON output
+
+Every registered command, alias, adapter subcommand, help and version invocation SHALL accept `--json` before the end-of-options separator. JSON mode SHALL suppress interactive prompts, live displays, browser launches, and editors. It SHALL NOT imply consent or overwrite permission. The CLI SHALL emit exactly one JSON document to stdout on every handled outcome, with `schemaVersion: "3"`, canonical `command`, `ok`, `warnings`, and exactly one of `data` or `error`. Error objects SHALL carry a stable `code` and `message` and MAY include `details`, `fix`, and `docsUrl`. Unexpected handled failures SHALL report a sanitized error and exit 2. Uncatchable termination cannot guarantee a document.
+
+A command's other output requirements describe invocations without `--json` unless they say otherwise. Tokens after the end-of-options separator SHALL be operands, so a `--json` there SHALL NOT select JSON mode. Every string value SHALL round-trip exactly through a JSON parser, and every character that the terminal-safety requirements make visible SHALL be written as a `\uXXXX` escape rather than raw, so the document is inert on a terminal.
+
+#### Scenario: JSON edit refuses an interactive workflow
+
+- **WHEN** a user runs `facet edit --json`
+- **THEN** the command SHALL NOT open an editor or prompt
+- **AND** the JSON error SHALL direct the user to `facet modify`
+
+#### Scenario: A JSON install needs consent
+
+- **WHEN** a user runs an install operation with `--json` and MCP configuration requires approval
+- **AND** the user has not supplied `--accept-mcp`
+- **THEN** the operation SHALL fail before mutation and report the consent information in its JSON error
+
+#### Scenario: A command alias identifies the canonical command
+
+- **WHEN** a user runs `facet rm --json`
+- **THEN** the JSON document SHALL identify its command as `remove`
+
+#### Scenario: Info reports a facet as data
+
+- **WHEN** a user runs `facet info <name> --json`
+- **THEN** `data` SHALL contain the facet's name, version, origin, and exact manifest description and author
+- **AND** `data` SHALL list its skills, commands, agents, servers, and files, with each asset's materialization when installed and the selector `facet cat` accepts
+- **AND** `data` SHALL report a registry owner and publisher only when they are verified
+
+#### Scenario: Cat returns file content inside the envelope
+
+- **WHEN** a user runs `facet cat <name> <selector> --json` for a text file
+- **THEN** `data.content` SHALL be the file's exact text and `data.path` its declared path
+- **AND** a binary, ambiguous, server, unknown, or unsafe selection SHALL produce a coded error instead of content
+
+#### Scenario: Publisher control characters are escaped
+
+- **WHEN** a facet description contains an ESC character or a bidirectional override
+- **AND** a user runs `facet info <name> --json`
+- **THEN** stdout SHALL NOT contain those characters raw
+- **AND** parsing the document SHALL return the description unchanged
+
 ### Requirement: Update emits machine-readable output on request
 
 The `update` command SHALL accept a `--json` flag. When `--json` is given, the system SHALL emit a single JSON document to stdout and SHALL emit no other output to stdout, on every outcome the command reaches.
@@ -1455,7 +1513,7 @@ Every JSON document the `update` command emits under `--json` SHALL carry a `sch
 
 ### Requirement: Machine-readable output reports whether the run wrote to the project
 
-An `update --json` document with `ok: true` SHALL carry an `applied` boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `applied` is `false`, when the run previewed a change without writing it.
+An `update --json` document with `ok: true` SHALL carry `data.applied`, a boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `data.applied` is `false`, when the run previewed a change without writing it.
 
 #### Scenario: A dry run reports applied false with facets it would update
 

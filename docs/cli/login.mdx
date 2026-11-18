@@ -6,34 +6,41 @@ description: Sign in to the facet registry
 ## Usage
 
 ```sh
-facet login [--browser | --no-browser | --token]
+facet login [--browser | --no-browser | --token | --complete <login-id>] [--json]
 ```
 
-In a terminal, choose browser sign-in or paste a personal access token. Browser sign-in is available on macOS and Linux. On Windows, use `facet login --token` or [`FACET_TOKEN`](/cli/env#facet_token).
+In a terminal, `facet login` asks whether to sign in with a browser or paste a personal access token. Browser sign-in is available on macOS and Linux. On Windows, use `facet login --token` or [`FACET_TOKEN`](/cli/env#facet_token).
 
 The registry verifies your identity before the CLI saves a usable credential. For CI and scripts, supply `FACET_TOKEN` instead of running interactive login.
 
 ## Examples
 
 ```sh
-facet login --browser      # open the verification page
-facet login --no-browser   # show the URL and code for another browser
+facet login                # choose a sign-in method
+facet login --browser      # skip the choice and open the verification page
+facet login --no-browser   # skip the choice and show the URL and code for another browser
 facet login --token        # paste a personal access token in a terminal
+facet login --json         # start a sign-in for a program and return immediately
+facet login --complete <login-id> --json  # wait for that sign-in to finish
 facet whoami
 ```
 
 ## Flags
 
 <ResponseField name="--browser" type="boolean">
-  Start browser sign-in and try to open the verification page. The URL and code are always printed, so you can finish manually if opening the browser fails.
+  Skip the choice, start browser sign-in, and try to open the verification page. The URL and code are always printed, so you can finish manually if opening the browser fails.
 </ResponseField>
 
 <ResponseField name="--no-browser" type="boolean">
-  Start the same sign-in flow without opening a browser. Open the printed URL on a device with a browser and enter the code while the command waits.
+  Skip the choice and start the same sign-in without opening a browser. Open the printed URL on a device with a browser and enter the code while the command waits. With `--json` it is accepted but not needed.
 </ResponseField>
 
 <ResponseField name="--token" type="boolean">
   Paste a personal access token from your account at [agentfacets.io](https://agentfacets.io). Requires an interactive terminal and cannot be combined with a browser flag.
+</ResponseField>
+
+<ResponseField name="--complete" type="string">
+  Complete a login started with `facet login --json`, by the `data.loginId` it returned. Cannot be combined with browser or token flags.
 </ResponseField>
 
 ## Exit codes
@@ -55,6 +62,10 @@ Browser sign-in prints a verification URL and user code, then `Logged in as your
 Confirm the code shown in your terminal on the verification page. Complete any registry account setup requested in the browser, then sign in again if the CLI asks you to finish onboarding.
 
 This uses the [OAuth device authorization flow](https://workos.com/docs/authkit/cli-auth), with a public client ID and no embedded API key or client secret. The CLI does not need a browser redirect back to your machine. It accepts only the selected registry's validated sign-in configuration and rejects unexpected authentication redirects.
+
+For a program-driven flow, call `facet login --json` and present `data.verificationUri` and `data.userCode` to the user. The successful response has `data.status: "authorization_pending"`; it does not mean login is complete. Unlike `--no-browser`, it returns without waiting. Then call `facet login --complete <login-id> --json` with `data.loginId` and wait for `data.status: "authenticated"`. `--browser` and `--token` are refused with `--json`. Both calls must use the same registry and `FACET_DIR`.
+
+If completion is interrupted or its exchange result is uncertain, check [`facet whoami`](/cli/whoami) and start a new login if necessary. Logout without a saved browser session does not cancel an outstanding authorization. For unattended authentication, use `FACET_TOKEN`.
 
 ### Where the credential is stored
 

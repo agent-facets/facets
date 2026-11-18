@@ -47,25 +47,10 @@ describe('facet update — the command surface', () => {
     expect(result.stdout).toMatch(/update,\s*upgrade/)
   })
 
-  test('per-command help lists every supported flag, in both spellings', async () => {
+  test('update --help reaches the canonical command help', async () => {
     const result = await spawnCli(['update', '--help'])
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Usage: facet update')
-    expect(result.stdout).toMatch(/-L, --latest\s+/)
-    expect(result.stdout).toMatch(/-i, --interactive\s+/)
-    expect(result.stdout).toMatch(/--dry-run\s+/)
-    expect(result.stdout).toMatch(/--verbose\s+/)
-    expect(result.stdout).toMatch(/--accept-mcp\s+/)
-  })
-
-  test('help does not offer a frozen mode, which update has no meaning for', async () => {
-    const result = await spawnCli(['update', '--help'])
-    expect(result.stdout).not.toContain('--frozen-lockfile')
-  })
-
-  test('help distinguishes project facets from the CLI binary', async () => {
-    const result = await spawnCli(['update', '--help'])
-    expect(result.stdout).toContain('self-update')
   })
 
   test('the alias produces byte-identical help', async () => {

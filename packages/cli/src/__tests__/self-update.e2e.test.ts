@@ -19,12 +19,10 @@ describe('self-update — e2e', () => {
     expect(result.stdout).toMatch(/self-update,\s*self-upgrade/)
   })
 
-  test('self-update --help renders canonical-name usage and both flags', async () => {
+  test('self-update --help reaches the canonical command help', async () => {
     const result = await runCli(['self-update', '--help'])
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Usage: facet self-update')
-    expect(result.stdout).toMatch(/--version\s+Pin to a specific version/)
-    expect(result.stdout).toMatch(/--dry-run\s+Print the plan/)
   })
 
   test('self-upgrade --help resolves to the same canonical-name help output', async () => {

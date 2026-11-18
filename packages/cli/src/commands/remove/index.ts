@@ -1,7 +1,7 @@
 import { prepareRemove, type RemovePrepareFailure, type RunRemoveResult, runRemove } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
@@ -10,6 +10,7 @@ import { unsupportedManifestVersionError } from '../../util/unsupported-manifest
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
+import { adapterFailure, installJsonResult, jsonAdapters, withJsonAbort } from '../shared/install-json.ts'
 
 /**
  * `facet remove <facet> [more facets...]` — removes one or more facets
@@ -23,13 +24,40 @@ import { installFailureDetail, installFailureFix } from '../shared/install-failu
  * parses argv, ensures adapters, renders progress, and maps the result to
  * an exit code + error block.
  */
-export const removeCommand: Command = {
+export const removeCommand = defineCommand({
   name: 'remove',
   description: 'Remove a facet from facets.json and uninstall it',
   usage: '<facet> [more facets...]',
   aliases: ['rm'],
   implemented: true,
   flags: INSTALL_PIPELINE_FLAGS,
+  runJson: async (args, flags) => {
+    if (args.length === 0) {
+      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'remove requires at least one facet name' } }
+    }
+    const projectRoot = process.cwd()
+    const prepared = prepareRemove({ projectRoot, names: args })
+    if (!prepared.ok) {
+      const error = removePrepareCliError(prepared.failure)
+      return { ok: false, error: { code: 'REMOVE_PREPARE_FAILED', message: error.what, fix: error.fix } }
+    }
+    const { adapters, errors } = await jsonAdapters()
+    if (adapters === null) return adapterFailure(errors)
+    const result = await withJsonAbort((signal) =>
+      runRemove({
+        projectRoot,
+        names: args,
+        adapters,
+        prepared,
+        onStage: () => {},
+        mcpConsent: flags[ACCEPT_MCP_FLAG] === true ? { kind: 'preapproved' } : { kind: 'unavailable' },
+        signal,
+      }),
+    )
+    if (result.ok || result.phase === 'install') return installJsonResult(result.install, 'remove')
+    const error = removePrepareCliError(result.failure)
+    return { ok: false, error: { code: 'REMOVE_PREPARE_FAILED', message: error.what, fix: error.fix } }
+  },
   run: async (args, flags) => {
     if (args.length === 0) {
       writeCliError({
@@ -154,7 +182,7 @@ export const removeCommand: Command = {
     })
     return 1
   },
-}
+})
 
 /**
  * Map a `RemovePrepareFailure` (engine) to the canonical CLI error block

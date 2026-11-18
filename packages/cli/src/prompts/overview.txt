@@ -62,15 +62,21 @@ Command index
   facet instructions   Print these instructions (see the topic index above).
 
 Machine-readable output
-  `facet create`, `facet modify`, `facet build`, `facet update`, and
-  `facet outdated` accept `--json` for structured output. Prefer it when you
-  need to parse results.
+  Commands accept `--json` for one structured document, including errors.
+  JSON mode never prompts. The schemaVersion "3" envelope contains `ok`,
+  `command`, `warnings`, and either `data` or `error`. `facet edit` requires
+  a human; use `facet modify` for machine-driven changes.
+
+  For program-driven browser login, start with `facet login --json`,
+  show the returned verification URL and code, then run
+  `facet login --complete <login-id> --json`. For unattended systems use
+  FACET_TOKEN.
 
   For update and outdated the document reports each facet's outcome:
   `updated` (this run resolves to something newer), `held` (newer exists,
   this run doesn't take it), `current`, or `unsupported` (a git or local
   facet, not version-checked). `resolved` is the version it takes;
-  `applied` tells a real update from a preview: `facet outdated` and
-  `facet update --dry-run` always report `applied: false`.
+  `data.applied` tells a real update from a preview: `facet outdated` and
+  `facet update --dry-run` always report `data.applied: false`.
 
 Before doing any authoring work, run: facet instructions authoring

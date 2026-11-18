@@ -310,6 +310,7 @@ describe('facet login command routing', () => {
       expect(result.code).toBe(1)
       expect(result.stderr).toContain('fix:')
     }
+    // @ts-expect-error the declared type rules this out; the handler still refuses it at runtime
     const wrong = await withTTY(false, () => captureStderr(() => loginCommand.run([], { browser: 'yes' })))
     expect(wrong.result).toBe(1)
     expect(wrong.stderr).toContain('invalid login arguments')

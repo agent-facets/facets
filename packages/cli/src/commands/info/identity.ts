@@ -9,6 +9,21 @@ export type VerifiedOwner = { kind: 'user'; username: string } | { kind: 'org'; 
 const IDENTITY_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 
 /**
+ * The registry-verified owner and publisher, only when they pass the same
+ * check the human header applies. A value that fails it is reported as
+ * absent rather than passed through.
+ */
+export function verifiedIdentity(identity: { owner: VerifiedOwner; publisher: string } | undefined): {
+  owner: VerifiedOwner | null
+  publisher: string | null
+} {
+  if (identity === undefined || !IDENTITY_NAME.test(identity.publisher)) return { owner: null, publisher: null }
+  const owner = identity.owner
+  const ownerOk = owner.kind === 'org' ? IDENTITY_NAME.test(owner.slug) : IDENTITY_NAME.test(owner.username)
+  return { owner: ownerOk ? owner : null, publisher: identity.publisher }
+}
+
+/**
  * Header segments for who made the facet.
  *
  * `by "<author>"` is the manifest's free text, quoted, with backslashes and

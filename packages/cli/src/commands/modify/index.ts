@@ -5,7 +5,7 @@ import {
   loadManifest,
   writeManifest,
 } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { type CliError, writeCliError } from '../../util/errors.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { parseModifyArgs } from './parse.ts'
@@ -18,7 +18,7 @@ const MODIFY_JSON_SCHEMA_VERSION = '1'
  * authoring edits to an existing `facet.json` (and its asset files). The
  * scriptable counterpart to the interactive `facet edit` wizard.
  */
-export const modifyCommand: Command = {
+export const modifyCommand = defineCommand({
   name: 'modify',
   description: 'Make a headless edit to a facet (scriptable counterpart to `edit`)',
   usage: '<skill|agent|command|facet> [name] [directory]',
@@ -26,16 +26,54 @@ export const modifyCommand: Command = {
   flags: {
     add: { type: 'boolean', description: 'Add a new asset (scaffold + manifest entry)' },
     remove: { type: 'boolean', description: 'Remove an asset (delete file + manifest entry)' },
-    rename: { type: 'string', description: 'Rename an asset to the given name' },
-    description: { type: 'string', description: "Set the asset's (or facet's) description" },
-    name: { type: 'string', description: 'Set the facet name (facet target only)' },
-    version: { type: 'string', description: 'Set the facet version (facet target only)' },
+    rename: { type: 'string', valueName: 'name', description: 'Rename an asset to the given name' },
+    description: { type: 'string', valueName: 'text', description: "Set the asset's (or facet's) description" },
+    name: { type: 'string', valueName: 'name', description: 'Set the facet name (facet target only)' },
+    version: { type: 'string', valueName: 'version', description: 'Set the facet version (facet target only)' },
     private: { type: 'boolean', description: 'Set the facet private flag (facet target only)' },
-    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout' },
-    // Note: `--adapter-<name> '<json>'` and `--remove-adapter-<name>` are
-    // open-ended flags handled by parseModifyArgs; they can't be declared here.
   },
-  run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
+  patterns: {
+    'adapter-': {
+      type: 'string',
+      nameLabel: 'name',
+      valueName: 'json',
+      description: "Replace an asset's config for one adapter with a JSON object",
+    },
+    'remove-adapter-': { type: 'boolean', nameLabel: 'name', description: "Remove an asset's config for one adapter" },
+  },
+  runJson: async (args, flags) => {
+    const { positionals, directory } = splitDirectory(args)
+    const parsed = parseModifyArgs(positionals, flags)
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_ARGUMENTS', message: parsed.error.what, fix: parsed.error.fix },
+      }
+    }
+    const resolved = await resolveTargetDir(directory, { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) return { ok: false, error: { code: 'INVALID_DIRECTORY', message: resolved.message } }
+    const loaded = await loadManifest(resolved.dir)
+    if (!loaded.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_MANIFEST',
+          message: 'could not load facet.json',
+          details: { issues: loaded.errors.map((error) => ({ message: error.message })) },
+          fix: 'fix the manifest and try again',
+        },
+      }
+    }
+    const result = applyModify(loaded.data, parsed.op)
+    if (!result.ok) {
+      const error = describeApplyError(result.error)
+      return { ok: false, error: { code: 'MODIFY_FAILED', message: error.what, fix: error.fix } }
+    }
+    await writeManifest(result.manifest, resolved.dir)
+    await applyModifyFileOps(resolved.dir, result.fileOps)
+    return { ok: true, data: { changes: result.summary } }
+  },
+  run: async (args, flags) => {
     // The optional [directory] positional comes AFTER <target> [name]. Peel it
     // off if present so it isn't mistaken for an asset name.
     const { positionals, directory } = splitDirectory(args)
@@ -89,7 +127,7 @@ export const modifyCommand: Command = {
     }
     return 0
   },
-}
+})
 
 /**
  * The `[directory]` positional is optional and trails `<target> [name]`. It is

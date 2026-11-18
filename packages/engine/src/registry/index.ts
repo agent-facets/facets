@@ -31,10 +31,18 @@ export type {
   RegistrySessionResult,
   ResolvedRegistryCredential,
 } from './oauth-session.ts'
-export { beginCliLogin, completeCliLogin, logoutCliSession, resolveRegistryCredential } from './oauth-session.ts'
+export {
+  beginCliLogin,
+  beginDurableCliLogin,
+  completeCliLogin,
+  completeDurableCliLogin,
+  logoutCliSession,
+  resolveRegistryCredential,
+} from './oauth-session.ts'
 export type { PublishArgs, PublishResult } from './publish.ts'
 export { publishFacetVersion } from './publish.ts'
 export { MAX_REGISTRY_METADATA_SPECIFIERS, resolveRegistryMetadataBatch } from './resolve-metadata.ts'
+export { searchRegistry } from './search.ts'
 export type { RegistryError, RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 export type { RegistryOwner, RegistryVersionDetails } from './version-details.ts'
 export { fetchRegistryVersionDetails } from './version-details.ts'

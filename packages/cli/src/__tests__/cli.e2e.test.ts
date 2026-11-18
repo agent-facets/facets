@@ -140,6 +140,7 @@ describe('CLI — unexpected error', () => {
         run: async (_args: string[], _flags: Record<string, unknown>) => {
           throw new Error('boom')
         },
+        runJson: async () => ({ ok: true as const, data: null }),
       },
     }
 

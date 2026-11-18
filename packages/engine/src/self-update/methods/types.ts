@@ -57,6 +57,8 @@ export interface UpdateOptions {
    * non-read-only subprocess. `describe()` is the only output path.
    */
   dryRun: boolean
+  /** Suppress child stdout and terminal input for machine-readable invocations. */
+  machine?: boolean
   /**
    * Optional callback for normal output lines (informational messages,
    * post-install warnings, status). The CLI passes a callback that writes

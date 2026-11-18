@@ -5,6 +5,6 @@ export const pnpmMethod: InstallMethod = {
   kind: 'pnpm',
   displayName: 'pnpm (global)',
   describe: ({ targetVersion }) => `pnpm add -g agent-facets@${targetVersion}`,
-  update: ({ targetVersion, onError }) =>
-    spawnInherit(['pnpm', 'add', '-g', `agent-facets@${targetVersion}`], { onError }),
+  update: ({ targetVersion, onError, machine }) =>
+    spawnInherit(['pnpm', 'add', '-g', `agent-facets@${targetVersion}`], { onError, machine }),
 }

@@ -9,7 +9,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { ListView } from '../../tui/views/list/list-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
@@ -26,10 +26,65 @@ import { unsupportedManifestVersionError } from '../../util/unsupported-manifest
  *
  * No network calls and no "updates available" indicator.
  */
-export const listCommand: Command = {
+export const listCommand = defineCommand({
   name: 'list',
   description: 'List installed facets',
   implemented: true,
+  runJson: async (args) => {
+    if (args.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: 'facet list does not accept positional arguments',
+          fix: 'use facet search to browse the registry',
+        },
+      }
+    }
+    const root = process.cwd()
+    if (!existsSync(join(root, FACETS_JSON_FILE))) {
+      return { ok: true, data: { manifestPresent: false, facets: [] } }
+    }
+    const manifest = loadProjectManifest(root)
+    if (!manifest.ok) {
+      const failure = manifestLoadFailure(root, manifest)
+      const error =
+        failure.reason === 'manifest-unsupported-version'
+          ? unsupportedManifestVersionError(failure)
+          : {
+              what: 'facets.json is malformed',
+              detail: failure.error,
+              fix: 'fix the JSON syntax or schema errors and try again',
+            }
+      return {
+        ok: false,
+        error: {
+          code: failure.reason === 'manifest-unsupported-version' ? 'UNSUPPORTED_MANIFEST_VERSION' : 'INVALID_MANIFEST',
+          message: error.what,
+          details: error.detail === undefined ? undefined : { message: error.detail },
+          fix: error.fix,
+        },
+      }
+    }
+    const declared = Object.entries(manifest.manifest.facets)
+    if (declared.length === 0) return { ok: true, data: { manifestPresent: true, facets: [] } }
+    const lock = loadLockfile(root)
+    const lockfile = lock.ok && lock.existed ? lock.parsed.lockfile : undefined
+    return {
+      ok: true,
+      data: {
+        manifestPresent: true,
+        facets: declared.map(([name, entry]) => ({
+          name,
+          source: entry.source,
+          version: lockfile?.facets[name]?.version ?? null,
+        })),
+      },
+      warnings: lock.ok
+        ? []
+        : [{ code: 'INVALID_LOCKFILE', message: `${FACETS_LOCK_FILE} is malformed`, details: { message: lock.error } }],
+    }
+  },
   run: async (args, _flags) => {
     if (args.length > 0) {
       writeCliError({
@@ -117,4 +172,4 @@ export const listCommand: Command = {
     instance.unmount()
     return 0
   },
-}
+})

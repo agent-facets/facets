@@ -52,7 +52,7 @@ describe('update registration', () => {
     expect(updateCommand.flags?.['dry-run']).toBeDefined()
     // Reproducing a lockfile is `facet install`'s mode, and it is the
     // opposite of what update does.
-    expect(updateCommand.flags?.['frozen-lockfile']).toBeUndefined()
+    expect(Object.hasOwn(updateCommand.flags ?? {}, 'frozen-lockfile')).toBe(false)
   })
 })
 

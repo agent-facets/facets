@@ -1,37 +1,124 @@
 import type { RegistrySessionFailure } from '@agent-facets/engine'
 import {
   beginCliLogin,
+  beginDurableCliLogin,
   completeCliLogin,
+  completeDurableCliLogin,
   fetchAuthMe,
   resolveCredential,
   writeCredentialsToken,
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand, type FlagDefs, type FlagValues } from '../../command.ts'
 import { LoginMenu } from '../../tui/components/login-menu.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
+import type { JsonError, JsonResult } from '../../util/json-output.ts'
 import { openBrowser } from '../../util/open-browser.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 type LoginChoice = { kind: 'browser' } | { kind: 'token'; token: string } | { kind: 'cancelled' }
 
-export const loginCommand: Command = {
+const LOGIN_FLAGS = {
+  browser: {
+    type: 'boolean',
+    description: 'Skip the picker, open the verification page, and wait for sign-in',
+    negative: {
+      name: 'no-browser',
+      description: 'Skip the picker and show the verification URL and code without opening a browser',
+    },
+  },
+  token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
+  complete: { type: 'string', valueName: 'login-id', description: 'Complete a pending login started with --json' },
+} as const satisfies FlagDefs
+
+async function runLoginJson(args: string[], flags: FlagValues<typeof LOGIN_FLAGS>): Promise<JsonResult> {
+  if (
+    args.length > 0 ||
+    Object.keys(flags).some((name) => !['browser', 'token', 'complete', 'json'].includes(name)) ||
+    flags.token === true ||
+    flags.browser === true ||
+    (flags.complete !== undefined && (flags.browser !== undefined || typeof flags.complete !== 'string'))
+  ) {
+    return {
+      ok: false,
+      error: {
+        code: 'INVALID_ARGUMENTS',
+        message: 'incompatible login arguments',
+        fix: 'use `facet login --json` to start, then `facet login --complete <login-id> --json`',
+      },
+    }
+  }
+  const controller = new AbortController()
+  const interrupt = () => controller.abort()
+  process.on('SIGINT', interrupt)
+  try {
+    if (typeof flags.complete === 'string') {
+      const completed = await completeDurableCliLogin(flags.complete, { signal: controller.signal })
+      if (!completed.ok) {
+        return { ok: false, error: durableLoginError(completed.error) }
+      }
+      const { profile, registry, cleanupFailed } = completed.value
+      return {
+        ok: true,
+        data: {
+          status: 'authenticated',
+          registry,
+          identity: {
+            username: profile.username,
+            email: profile.email,
+            tier: profile.tier,
+            suspended: profile.suspended,
+          },
+          credentialStored: true,
+        },
+        warnings: [
+          ...jsonCredentialWarnings(),
+          ...(cleanupFailed
+            ? [{ code: 'LOGIN_CLEANUP_FAILED', message: 'Could not remove pending login state.' }]
+            : []),
+        ],
+      }
+    }
+    const started = await beginDurableCliLogin({ signal: controller.signal })
+    if (!started.ok) return { ok: false, error: durableLoginError(started.error) }
+    return {
+      ok: true,
+      data: {
+        status: 'authorization_pending',
+        loginId: started.value.loginId,
+        registry: started.value.registry,
+        verificationUri: started.value.display.verificationUri,
+        userCode: started.value.display.userCode,
+        expiresAt: new Date(started.value.expiresAt).toISOString(),
+      },
+      warnings: jsonCredentialWarnings(),
+    }
+  } finally {
+    process.off('SIGINT', interrupt)
+  }
+}
+
+export const loginCommand = defineCommand({
   name: 'login',
   description: 'Sign in to the registry using a browser or personal access token',
   implemented: true,
-  flags: {
-    browser: {
-      type: 'boolean',
-      description: 'Use browser sign-in; --no-browser shows the code without opening a browser',
-    },
-    token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
-  },
+  flags: LOGIN_FLAGS,
+  runJson: (args, flags) => runLoginJson(args, flags),
   run: async (args, flags) => {
+    if (flags.complete !== undefined) {
+      const result = await runLoginJson(args, { ...flags, json: true })
+      if (!result.ok) {
+        writeCliError({ what: result.error.message, fix: result.error.fix ?? 'start a new login' })
+        return result.exitCode ?? 1
+      }
+      process.stdout.write('Login completed.\n')
+      return result.exitCode ?? 0
+    }
     if (
       args.length > 0 ||
-      Object.keys(flags).some((name) => name !== 'browser' && name !== 'token') ||
+      Object.keys(flags).some((name) => name !== 'browser' && name !== 'token' && name !== 'json') ||
       (flags.browser !== undefined && typeof flags.browser !== 'boolean') ||
       (flags.token !== undefined && typeof flags.token !== 'boolean')
     ) {
@@ -72,6 +159,59 @@ export const loginCommand: Command = {
     process.stdout.write('Cancelled.\n')
     return 1
   },
+})
+
+function durableLoginError(
+  failure: Exclude<Awaited<ReturnType<typeof completeDurableCliLogin>>, { ok: true }>['error'],
+): JsonError {
+  switch (failure.code) {
+    case 'LOGIN_STATE_UNCERTAIN':
+      return {
+        code: failure.code,
+        message: 'Login credential persistence could not be confirmed.',
+        fix: 'check facet whoami before starting another login',
+      }
+    case 'LOGIN_RESTART_REQUIRED':
+      return {
+        code: failure.code,
+        message: 'The login attempt cannot be resumed.',
+        fix: 'check facet whoami, then start a new login if needed',
+      }
+    case 'LOGIN_BUSY':
+      return { code: failure.code, message: 'Another process is completing this login.', fix: 'wait for that process' }
+    case 'LOGIN_NOT_FOUND':
+    case 'INVALID_LOGIN_ID':
+      return { code: failure.code, message: 'The pending login was not found.', fix: 'start a new login' }
+    default: {
+      const error = translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: failure })
+      return {
+        code: failure.code,
+        message: error.what,
+        ...(error.detail ? { details: { message: error.detail } } : {}),
+        fix: error.fix,
+        docsUrl: error.docsUrl,
+      }
+    }
+  }
+}
+
+function jsonCredentialWarnings(): { code: string; message: string }[] {
+  const existing = resolveCredential()
+  if (existing.source === 'env') {
+    return [{ code: 'ENV_CREDENTIAL_ACTIVE', message: 'FACET_TOKEN takes precedence over the browser session.' }]
+  }
+  if (existing.source === 'file') {
+    return [
+      {
+        code: 'PAT_CREDENTIAL_ACTIVE',
+        message: 'The saved personal access token takes precedence over the browser session.',
+      },
+    ]
+  }
+  if (existing.reason !== undefined) {
+    return [{ code: 'PAT_CREDENTIAL_UNREADABLE', message: 'The saved personal access token could not be read.' }]
+  }
+  return []
 }
 
 function warnShadowedCredential(): void {

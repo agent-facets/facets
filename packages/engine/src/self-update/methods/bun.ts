@@ -5,6 +5,6 @@ export const bunMethod: InstallMethod = {
   kind: 'bun',
   displayName: 'bun (global)',
   describe: ({ targetVersion }) => `bun add -g agent-facets@${targetVersion}`,
-  update: ({ targetVersion, onError }) =>
-    spawnInherit(['bun', 'add', '-g', `agent-facets@${targetVersion}`], { onError }),
+  update: ({ targetVersion, onError, machine }) =>
+    spawnInherit(['bun', 'add', '-g', `agent-facets@${targetVersion}`], { onError, machine }),
 }

@@ -9,12 +9,13 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
 import { formatInstallFailureDetail, writeInstallFailureDetail } from '../../util/install-detail.ts'
 import { canPromptInteractively, canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
+import type { JsonResult } from '../../util/json-output.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
@@ -45,7 +46,7 @@ import { candidateRows, classifyNoOp, defaultSelections, describeNoOp, type Upda
  * that could install an adapter, take a lock, or write a file may run
  * before the user has confirmed a selection they can still cancel.
  */
-export const updateCommand: Command = {
+export const updateCommand = defineCommand({
   name: 'update',
   aliases: ['upgrade'],
   description: 'Update the facets this project declares (see self-update for the CLI itself)',
@@ -66,9 +67,13 @@ export const updateCommand: Command = {
       type: 'boolean',
       description: 'Print the plan; do not modify any files',
     },
-    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
-  run: async (args, flags) => {
+  runJson: async (args, flags) => runUpdateJson(args, flags),
+  run: async (args, flags, context) => {
+    const writeJsonDocument = (document: UpdateDocument | UpdateErrorDocument): void => {
+      if (context?.onJsonDocument) context.onJsonDocument(document)
+      else printUpdateJsonDocument(document)
+    }
     // Read before the first refusal below, not after it. A run refused
     // for its arguments owes the caller the same one document on stdout
     // that every other outcome produces — an empty stdout and a non-zero
@@ -451,7 +456,7 @@ export const updateCommand: Command = {
     })
     return 1
   },
-}
+})
 
 /**
  * Stands in for the MCP consent prompt on the `--json` path, where there
@@ -475,7 +480,37 @@ const jsonModeCannotPrompt: McpConsentResolver = () => {
  * one parseable document on stdout, no prose around it — is kept in one
  * place rather than re-honoured at four call sites.
  */
-function writeJsonDocument(document: UpdateDocument | UpdateErrorDocument): void {
+export async function runUpdateJson(args: string[], flags: Record<string, unknown>): Promise<JsonResult> {
+  let document: UpdateDocument | UpdateErrorDocument | undefined
+  const exitCode = await updateCommand.run(
+    args,
+    { ...flags, json: true },
+    {
+      onJsonDocument: (value) => {
+        document = value as UpdateDocument | UpdateErrorDocument
+      },
+    },
+  )
+  if (document === undefined) {
+    return { ok: false, error: { code: 'INTERNAL_ERROR', message: 'Update produced no result' }, exitCode: 2 }
+  }
+  const result: UpdateDocument | UpdateErrorDocument = document
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'UPDATE_FAILED',
+        message: result.error.what,
+        details: result.error.detail === undefined ? undefined : { message: result.error.detail },
+        fix: result.error.fix,
+      },
+      exitCode,
+    }
+  }
+  return { ok: true, data: { applied: result.applied, facets: result.facets, counts: result.counts }, exitCode }
+}
+
+function printUpdateJsonDocument(document: UpdateDocument | UpdateErrorDocument): void {
   process.stdout.write(`${JSON.stringify(document, null, 2)}\n`)
 }
 

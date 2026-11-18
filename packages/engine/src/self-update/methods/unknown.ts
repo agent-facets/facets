@@ -46,14 +46,14 @@ export const unknownMethod: InstallMethod = {
   displayName: 'unknown (falling back to curl installer)',
   describe: ({ targetVersion }) =>
     `(unclassified install) curl -fsSL ${installerUrl()} | bash -s -- --version ${targetVersion}`,
-  update: async ({ targetVersion, onOutput, onError }) => {
+  update: async ({ targetVersion, onOutput, onError, machine }) => {
     const runningPath = process.execPath
     onOutput?.(`facet self-update: running binary at ${runningPath} could not be classified.\n`)
     onOutput?.('Falling back to the curl installer (will install to ~/.facet/bin/facet).\n\n')
 
     // unknown method is the one place we want PATH modification: the new
     // install location may not be reachable otherwise.
-    const code = await runCurlInstaller(targetVersion, { modifyPath: true, onError })
+    const code = await runCurlInstaller(targetVersion, { modifyPath: true, onError, machine })
     if (code !== 0) return code
 
     // After install, check $PATH shadowing. If `which facet` points to
