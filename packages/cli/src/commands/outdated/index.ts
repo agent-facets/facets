@@ -1,4 +1,4 @@
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { runUpdateJson, updateCommand } from '../update/index.ts'
 import { buildUpdateErrorJson } from '../update/json.ts'
@@ -13,7 +13,7 @@ import { buildUpdateErrorJson } from '../update/json.ts'
  * implementation would just be a second answer waiting to drift from the
  * one `update` actually applies.
  */
-export const outdatedCommand: Command = {
+export const outdatedCommand = defineCommand({
   name: 'outdated',
   description: 'Report which facets have newer releases, without changing anything',
   implemented: true,
@@ -23,7 +23,6 @@ export const outdatedCommand: Command = {
       short: 'L',
       description: "Compare against each facet's latest release, ignoring the range in facets.json",
     },
-    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
   runJson: async (args, flags) => {
     if (args.length > 0) {
@@ -67,4 +66,4 @@ export const outdatedCommand: Command = {
     // can only ever report, never prompt or apply.
     return updateCommand.run([], { ...flags, 'dry-run': true, interactive: false })
   },
-}
+})

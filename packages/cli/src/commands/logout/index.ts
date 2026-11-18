@@ -1,9 +1,9 @@
 import { logoutCliSession } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
-export const logoutCommand: Command = {
+export const logoutCommand = defineCommand({
   name: 'logout',
   description: 'Remove the saved registry credential',
   implemented: true,
@@ -62,4 +62,4 @@ export const logoutCommand: Command = {
     }
     return 0
   },
-}
+})

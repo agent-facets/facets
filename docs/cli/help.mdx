@@ -31,6 +31,8 @@ Per-command help prints the usage line, description, and available flags. Alias 
 
 Pass `--json` before or after a command to receive one JSON document on stdout. JSON mode never prompts, opens a browser, or launches an editor. It does not grant consent or overwrite permission. Flags after `--` are positional arguments.
 
+Every command accepts only the options its `--help` lists. An unknown option, an undeclared `--no-<flag>`, a repeated single-value option, or a missing value fails before the command runs, with exit code `1` (or an `INVALID_ARGUMENTS` document under `--json`). Boolean options also accept `--<flag>=true` and `--<flag>=false`. JSON help lists each spelling once; a negative spelling such as `--no-browser` carries `negates`, and a value option carries `valueName`.
+
 ```json
 {
   "schemaVersion": "3",

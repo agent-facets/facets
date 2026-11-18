@@ -1,28 +1,39 @@
 import { describe, expect, test } from 'bun:test'
-import { type Command, commands, findShortFlagCollisions } from '../commands.ts'
+import {
+  type AnyCommand,
+  commands,
+  defineCommand,
+  type FlagDefs,
+  type FlagPatterns,
+  findShortFlagCollisions,
+} from '../commands.ts'
 import { run } from '../run.ts'
 
 /**
  * Build a one-command registry whose `run` captures the positional args and
  * flags it received, so we can assert how `run()` parses argv.
  */
-function captureRegistry(flags?: Command['flags']): {
-  registry: Record<string, Command>
+function captureRegistry(
+  flags?: FlagDefs,
+  patterns?: FlagPatterns,
+): {
+  registry: Record<string, AnyCommand>
   captured: () => { args: string[]; flags: Record<string, unknown> } | undefined
 } {
   let seen: { args: string[]; flags: Record<string, unknown> } | undefined
-  const registry: Record<string, Command> = {
-    demo: {
+  const registry: Record<string, AnyCommand> = {
+    demo: defineCommand({
       name: 'demo',
       description: 'test command',
       implemented: true,
       ...(flags ? { flags } : {}),
+      ...(patterns ? { patterns } : {}),
       run: async (args, f) => {
         seen = { args, flags: f }
         return 0
       },
       runJson: async () => ({ ok: true, data: null }),
-    },
+    }),
   }
   return { registry, captured: () => seen }
 }
@@ -30,7 +41,7 @@ function captureRegistry(flags?: Command['flags']): {
 describe('run — array flags', () => {
   test('repeated array flag collects into string[]', async () => {
     const { registry, captured } = captureRegistry({
-      skill: { type: 'array', description: 'skills' },
+      skill: { type: 'array', valueName: 'name', description: 'skills' },
     })
     await run(['demo', '--skill', 'a', '--skill', 'b'], registry)
     expect(captured()?.flags.skill).toEqual(['a', 'b'])
@@ -38,28 +49,77 @@ describe('run — array flags', () => {
 
   test('single array flag is normalized to a one-element array', async () => {
     const { registry, captured } = captureRegistry({
-      skill: { type: 'array', description: 'skills' },
+      skill: { type: 'array', valueName: 'name', description: 'skills' },
     })
     await run(['demo', '--skill', 'only'], registry)
     expect(captured()?.flags.skill).toEqual(['only'])
   })
 })
 
-describe('run — undeclared flag passthrough', () => {
-  test('open-ended flags (used by modify) reach the command', async () => {
-    const { registry, captured } = captureRegistry()
-    await run(['demo', 'skill', 'greet', '--adapter-claude-code', '{"a":1}'], registry)
-    expect(captured()?.flags['adapter-claude-code']).toBe('{"a":1}')
+const ADAPTER_PATTERNS = {
+  'adapter-': { type: 'string', nameLabel: 'name', valueName: 'json', description: 'set' },
+  'remove-adapter-': { type: 'boolean', nameLabel: 'name', description: 'remove' },
+} as const satisfies FlagPatterns
+
+describe('run — declared flag patterns', () => {
+  test('a declared pattern reaches the command under its full name', async () => {
+    const { registry, captured } = captureRegistry(undefined, ADAPTER_PATTERNS)
+    await run(['demo', 'skill', 'greet', '--adapter-claude-code', '{"a":1}', '--remove-adapter-opencode'], registry)
+    expect(captured()?.args).toEqual(['skill', 'greet'])
+    expect(captured()?.flags).toEqual({ 'adapter-claude-code': '{"a":1}', 'remove-adapter-opencode': true })
   })
 
-  // Declaring short aliases changes how the parser is configured, so the
-  // open-ended flags `modify` depends on have to keep working alongside them.
-  test('a command that declares short aliases still forwards open-ended flags', async () => {
-    const { registry, captured } = captureRegistry({
-      interactive: { type: 'boolean', short: 'i', description: 'interactive' },
+  test('patterns work alongside declared short aliases', async () => {
+    const { registry, captured } = captureRegistry(
+      { interactive: { type: 'boolean', short: 'i', description: 'interactive' } },
+      ADAPTER_PATTERNS,
+    )
+    await run(['demo', '-i', '--adapter-claude-code', '{"a":1}'], registry)
+    expect(captured()?.flags).toEqual({ interactive: true, 'adapter-claude-code': '{"a":1}' })
+  })
+
+  test('a bare prefix is not a pattern match', async () => {
+    const { registry, captured } = captureRegistry(undefined, ADAPTER_PATTERNS)
+    expect(await run(['demo', '--adapter-', 'x'], registry)).toBe(1)
+    expect(captured()).toBeUndefined()
+  })
+})
+
+describe('run — only declared spellings are accepted', () => {
+  const FLAGS = {
+    force: { type: 'boolean', description: 'force' },
+    readme: { type: 'boolean', description: 'readme', negative: { name: 'no-readme', description: 'skip' } },
+    name: { type: 'string', valueName: 'name', description: 'name' },
+  } as const satisfies FlagDefs
+
+  for (const [label, argv] of [
+    ['an unknown long option', ['demo', '--forse']],
+    ['an undeclared negative', ['demo', '--no-force']],
+    ['an unknown short option', ['demo', '-x']],
+    ['a value flag with no value', ['demo', '--name']],
+    ['a value flag followed by another flag', ['demo', '--name', '--force']],
+    ['a repeated single-value flag', ['demo', '--name', 'a', '--name', 'b']],
+    ['a boolean given a non-boolean value', ['demo', '--force=yes']],
+    ['a negative given a value', ['demo', '--no-readme=true']],
+    ['an unknown option before the command', ['--verbose', 'demo']],
+  ] as const) {
+    test(`${label} is refused and the command never runs`, async () => {
+      const { registry, captured } = captureRegistry(FLAGS)
+      expect(await run([...argv], registry)).toBe(1)
+      expect(captured()).toBeUndefined()
     })
-    await run(['demo', '--adapter-claude-code', '{"a":1}'], registry)
-    expect(captured()?.flags).toEqual({ 'adapter-claude-code': '{"a":1}' })
+  }
+
+  test('a declared negative sets its option to false', async () => {
+    const { registry, captured } = captureRegistry(FLAGS)
+    await run(['demo', '--no-readme'], registry)
+    expect(captured()?.flags).toEqual({ readme: false })
+  })
+
+  test('explicit boolean values and inline string values are accepted', async () => {
+    const { registry, captured } = captureRegistry(FLAGS)
+    await run(['demo', '--force=false', '--name=-dash'], registry)
+    expect(captured()?.flags).toEqual({ force: false, name: '-dash' })
   })
 })
 
@@ -67,7 +127,7 @@ describe('run — declared short aliases', () => {
   const SHORT_FLAGS = {
     interactive: { type: 'boolean', short: 'i', description: 'interactive' },
     latest: { type: 'boolean', short: 'L', description: 'latest' },
-  } as const satisfies Command['flags']
+  } as const satisfies FlagDefs
 
   test('-i sets the canonical flag and nothing else', async () => {
     const { registry, captured } = captureRegistry(SHORT_FLAGS)
@@ -101,7 +161,7 @@ describe('run — declared short aliases', () => {
 
   test('a short string flag keeps its value a string', async () => {
     const { registry, captured } = captureRegistry({
-      tag: { type: 'string', short: 't', description: 'tag' },
+      tag: { type: 'string', short: 't', valueName: 'tag', description: 'tag' },
     })
     await run(['demo', '-t', '1.5'], registry)
     expect(captured()?.flags.tag).toBe('1.5')
@@ -109,7 +169,7 @@ describe('run — declared short aliases', () => {
 
   test('a short array flag collects alongside its long form', async () => {
     const { registry, captured } = captureRegistry({
-      skill: { type: 'array', short: 's', description: 'skills' },
+      skill: { type: 'array', short: 's', valueName: 'name', description: 'skills' },
     })
     await run(['demo', '--skill', 'a', '-s', 'b'], registry)
     expect(captured()?.flags).toEqual({ skill: ['a', 'b'] })
@@ -159,7 +219,7 @@ describe('findShortFlagCollisions', () => {
       latest: { type: 'boolean', short: 'l', description: 'latest' },
       list: { type: 'boolean', short: 'l', description: 'list' },
       t: { type: 'boolean', description: 'a one-letter long flag' },
-      tag: { type: 'string', short: 't', description: 'tag' },
+      tag: { type: 'string', short: 't', valueName: 'tag', description: 'tag' },
     })
     expect(collisions).toHaveLength(2)
     expect(collisions.map((collision) => collision.kind).sort()).toEqual(['duplicate-short', 'short-shadows-long'])
@@ -203,7 +263,7 @@ describe('run — global --version is positional-aware', () => {
 
   test('--version AFTER a command is forwarded to the command, not intercepted', async () => {
     const { registry, captured } = captureRegistry({
-      version: { type: 'string', description: 'set version' },
+      version: { type: 'string', valueName: 'version', description: 'set version' },
     })
     const code = await run(['demo', 'facet', '--version', '1.2.3'], registry)
     expect(code).toBe(0)

@@ -1,5 +1,5 @@
 import { type FacetView, loadFacetView, resolveSelector } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { writeCliError } from '../../util/errors.ts'
 import type { JsonResult } from '../../util/json-output.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -15,7 +15,7 @@ import { facetViewJsonError } from '../shared/facet-view-json.ts'
  * when the project has one, the registry's latest version otherwise.
  * A selector only ever reaches a path the facet's manifest declares.
  */
-export const catCommand: Command = {
+export const catCommand = defineCommand({
   name: 'cat',
   description: "Print one of a facet's skills, commands, agents, or files",
   usage: '<name> <asset-or-path>',
@@ -141,7 +141,7 @@ export const catCommand: Command = {
     }
     return 0
   },
-}
+})
 
 /**
  * `facet cat --json`: the selected file's text, or its local path with

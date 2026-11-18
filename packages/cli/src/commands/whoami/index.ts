@@ -4,7 +4,7 @@ import {
   resolveRegistryCredential,
   type WireAuthMeResponse,
 } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
@@ -15,7 +15,7 @@ import { translateEngineRegistryError } from '../../util/registry-errors.ts'
  * the source so the user is not confused about which credential
  * authenticated the call.
  */
-export const whoamiCommand: Command = {
+export const whoamiCommand = defineCommand({
   name: 'whoami',
   description: 'Show the signed-in registry identity',
   implemented: true,
@@ -109,4 +109,4 @@ export const whoamiCommand: Command = {
     }
     return 0
   },
-}
+})

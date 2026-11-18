@@ -1,7 +1,7 @@
 import { prepareRemove, type RemovePrepareFailure, type RunRemoveResult, runRemove } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
@@ -24,7 +24,7 @@ import { adapterFailure, installJsonResult, jsonAdapters, withJsonAbort } from '
  * parses argv, ensures adapters, renders progress, and maps the result to
  * an exit code + error block.
  */
-export const removeCommand: Command = {
+export const removeCommand = defineCommand({
   name: 'remove',
   description: 'Remove a facet from facets.json and uninstall it',
   usage: '<facet> [more facets...]',
@@ -182,7 +182,7 @@ export const removeCommand: Command = {
     })
     return 1
   },
-}
+})
 
 /**
  * Map a `RemovePrepareFailure` (engine) to the canonical CLI error block

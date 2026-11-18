@@ -1,9 +1,9 @@
 import { applyEditOperations, buildEditContext } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { runEditWizardInk } from './wizard.tsx'
 
-export const editCommand: Command = {
+export const editCommand = defineCommand({
   name: 'edit',
   description: 'Edit a facet project interactively',
   usage: '[directory]',
@@ -16,7 +16,7 @@ export const editCommand: Command = {
       fix: 'use facet modify for non-interactive edits',
     },
   }),
-  run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
+  run: async (args, _flags) => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {
       console.error(resolved.message)
@@ -59,4 +59,4 @@ export const editCommand: Command = {
 
     return 0
   },
-}
+})

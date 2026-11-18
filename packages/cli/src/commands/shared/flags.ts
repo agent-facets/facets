@@ -1,5 +1,5 @@
 import type { McpConsentPolicy, McpConsentResolver } from '@agent-facets/engine'
-import type { FlagDef } from '../../commands.ts'
+import type { FlagDefs } from '../../command.ts'
 
 /**
  * The flag name a user types to pre-approve MCP server configuration.
@@ -23,13 +23,13 @@ export const ACCEPT_MCP_FLAG = 'accept-mcp'
  * consent path as an install, and a user who cannot pre-approve there
  * has no non-interactive way to finish the operation.
  */
-export const INSTALL_PIPELINE_FLAGS: Record<string, FlagDef> = {
+export const INSTALL_PIPELINE_FLAGS = {
   verbose: { type: 'boolean', description: 'Show detailed step output on stderr' },
   [ACCEPT_MCP_FLAG]: {
     type: 'boolean',
     description: 'Approve the MCP server configuration this operation would write, without prompting',
   },
-}
+} as const satisfies FlagDefs
 
 /**
  * Choose the MCP consent policy for one run.

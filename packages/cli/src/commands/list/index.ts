@@ -9,7 +9,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { ListView } from '../../tui/views/list/list-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
@@ -26,7 +26,7 @@ import { unsupportedManifestVersionError } from '../../util/unsupported-manifest
  *
  * No network calls and no "updates available" indicator.
  */
-export const listCommand: Command = {
+export const listCommand = defineCommand({
   name: 'list',
   description: 'List installed facets',
   implemented: true,
@@ -172,4 +172,4 @@ export const listCommand: Command = {
     instance.unmount()
     return 0
   },
-}
+})

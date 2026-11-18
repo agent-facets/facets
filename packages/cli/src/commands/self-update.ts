@@ -1,5 +1,5 @@
 import { runSelfUpdate } from '@agent-facets/engine'
-import type { Command } from '../commands.ts'
+import { defineCommand } from '../command.ts'
 import { formatSelfUpdateError } from '../util/self-update-errors.ts'
 import { version as currentVersion } from '../version.ts'
 
@@ -12,15 +12,15 @@ import { version as currentVersion } from '../version.ts'
  * `@agent-facets/engine`; this file is just the CLI surface that supplies
  * the running binary's version and routes output to the user's terminal.
  */
-export const selfUpdateCommand: Command = {
+export const selfUpdateCommand = defineCommand({
   name: 'self-update',
   aliases: ['self-upgrade'],
   description: 'Update the facet CLI to a newer version',
-  usage: '[--version <x.y.z>] [--dry-run]',
   implemented: true,
   flags: {
     version: {
       type: 'string',
+      valueName: 'version',
       description: 'Pin to a specific version instead of the latest',
     },
     'dry-run': {
@@ -71,4 +71,4 @@ export const selfUpdateCommand: Command = {
       onError: (event) => process.stderr.write(formatSelfUpdateError(event)),
     })
   },
-}
+})

@@ -67,8 +67,8 @@ Machine-readable output
   `command`, `warnings`, and either `data` or `error`. `facet edit` requires
   a human; use `facet modify` for machine-driven changes.
 
-  For program-driven browser login, start with `facet login --no-browser
-  --json`, show the returned verification URL and code, then run
+  For program-driven browser login, start with `facet login --json`,
+  show the returned verification URL and code, then run
   `facet login --complete <login-id> --json`. For unattended systems use
   FACET_TOKEN.
 

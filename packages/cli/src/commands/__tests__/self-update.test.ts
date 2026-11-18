@@ -110,8 +110,7 @@ describe('selfUpdateCommand.run flag forwarding', () => {
   })
 
   test('non-string version flag is ignored', async () => {
-    // Runtime defense — should not happen with the parser we use, but the
-    // type narrowing in run() should swallow it.
+    // @ts-expect-error the declared type rules this out; the runtime narrowing still holds
     await selfUpdateCommand.run([], { version: 42 })
     expect(lastCall().targetVersion).toBeUndefined()
   })
@@ -163,7 +162,7 @@ describe('per-command help rendering', () => {
     const out = captureLog(() => {
       printCommandHelp(selfUpdateCommand)
     })
-    expect(out).toMatch(/--version\s+Pin to a specific version/)
+    expect(out).toMatch(/--version <version>\s+Pin to a specific version/)
     expect(out).toMatch(/--dry-run\s+Print the plan/)
     expect(out).toMatch(/--help\s+Show help/)
   })

@@ -10,97 +10,105 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand, type FlagDefs, type FlagValues } from '../../command.ts'
 import { LoginMenu } from '../../tui/components/login-menu.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
-import type { JsonError } from '../../util/json-output.ts'
+import type { JsonError, JsonResult } from '../../util/json-output.ts'
 import { openBrowser } from '../../util/open-browser.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 type LoginChoice = { kind: 'browser' } | { kind: 'token'; token: string } | { kind: 'cancelled' }
 
-export const loginCommand: Command = {
-  name: 'login',
-  description: 'Sign in to the registry using a browser or personal access token',
-  implemented: true,
-  flags: {
-    browser: {
-      type: 'boolean',
-      description: 'Use browser sign-in; --no-browser shows the code without opening a browser',
+const LOGIN_FLAGS = {
+  browser: {
+    type: 'boolean',
+    description: 'Skip the picker, open the verification page, and wait for sign-in',
+    negative: {
+      name: 'no-browser',
+      description: 'Skip the picker and show the verification URL and code without opening a browser',
     },
-    token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
-    complete: { type: 'string', description: 'Complete a pending machine-driven browser login' },
   },
-  runJson: async (args, flags) => {
-    if (
-      args.length > 0 ||
-      Object.keys(flags).some((name) => !['browser', 'token', 'complete', 'json'].includes(name)) ||
-      flags.token === true ||
-      flags.browser === true ||
-      (flags.complete !== undefined && (flags.browser !== undefined || typeof flags.complete !== 'string'))
-    ) {
-      return { ok: false, error: { code: 'INVALID_ARGUMENTS', message: 'incompatible login arguments' } }
+  token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
+  complete: { type: 'string', valueName: 'login-id', description: 'Complete a pending login started with --json' },
+} as const satisfies FlagDefs
+
+async function runLoginJson(args: string[], flags: FlagValues<typeof LOGIN_FLAGS>): Promise<JsonResult> {
+  if (
+    args.length > 0 ||
+    Object.keys(flags).some((name) => !['browser', 'token', 'complete', 'json'].includes(name)) ||
+    flags.token === true ||
+    flags.browser === true ||
+    (flags.complete !== undefined && (flags.browser !== undefined || typeof flags.complete !== 'string'))
+  ) {
+    return {
+      ok: false,
+      error: {
+        code: 'INVALID_ARGUMENTS',
+        message: 'incompatible login arguments',
+        fix: 'use `facet login --json` to start, then `facet login --complete <login-id> --json`',
+      },
     }
-    const controller = new AbortController()
-    const interrupt = () => controller.abort()
-    process.on('SIGINT', interrupt)
-    try {
-      if (typeof flags.complete === 'string') {
-        const completed = await completeDurableCliLogin(flags.complete, { signal: controller.signal })
-        if (!completed.ok) {
-          return { ok: false, error: durableLoginError(completed.error) }
-        }
-        const { profile, registry, cleanupFailed } = completed.value
-        return {
-          ok: true,
-          data: {
-            status: 'authenticated',
-            registry,
-            identity: {
-              username: profile.username,
-              email: profile.email,
-              tier: profile.tier,
-              suspended: profile.suspended,
-            },
-            credentialStored: true,
-          },
-          warnings: [
-            ...jsonCredentialWarnings(),
-            ...(cleanupFailed
-              ? [{ code: 'LOGIN_CLEANUP_FAILED', message: 'Could not remove pending login state.' }]
-              : []),
-          ],
-        }
+  }
+  const controller = new AbortController()
+  const interrupt = () => controller.abort()
+  process.on('SIGINT', interrupt)
+  try {
+    if (typeof flags.complete === 'string') {
+      const completed = await completeDurableCliLogin(flags.complete, { signal: controller.signal })
+      if (!completed.ok) {
+        return { ok: false, error: durableLoginError(completed.error) }
       }
-      if (flags.browser !== false) {
-        return {
-          ok: false,
-          error: { code: 'INVALID_ARGUMENTS', message: 'JSON login requires --no-browser or --complete <id>' },
-        }
-      }
-      const started = await beginDurableCliLogin({ signal: controller.signal })
-      if (!started.ok) return { ok: false, error: durableLoginError(started.error) }
+      const { profile, registry, cleanupFailed } = completed.value
       return {
         ok: true,
         data: {
-          status: 'authorization_pending',
-          loginId: started.value.loginId,
-          registry: started.value.registry,
-          verificationUri: started.value.display.verificationUri,
-          userCode: started.value.display.userCode,
-          expiresAt: new Date(started.value.expiresAt).toISOString(),
+          status: 'authenticated',
+          registry,
+          identity: {
+            username: profile.username,
+            email: profile.email,
+            tier: profile.tier,
+            suspended: profile.suspended,
+          },
+          credentialStored: true,
         },
-        warnings: jsonCredentialWarnings(),
+        warnings: [
+          ...jsonCredentialWarnings(),
+          ...(cleanupFailed
+            ? [{ code: 'LOGIN_CLEANUP_FAILED', message: 'Could not remove pending login state.' }]
+            : []),
+        ],
       }
-    } finally {
-      process.off('SIGINT', interrupt)
     }
-  },
+    const started = await beginDurableCliLogin({ signal: controller.signal })
+    if (!started.ok) return { ok: false, error: durableLoginError(started.error) }
+    return {
+      ok: true,
+      data: {
+        status: 'authorization_pending',
+        loginId: started.value.loginId,
+        registry: started.value.registry,
+        verificationUri: started.value.display.verificationUri,
+        userCode: started.value.display.userCode,
+        expiresAt: new Date(started.value.expiresAt).toISOString(),
+      },
+      warnings: jsonCredentialWarnings(),
+    }
+  } finally {
+    process.off('SIGINT', interrupt)
+  }
+}
+
+export const loginCommand = defineCommand({
+  name: 'login',
+  description: 'Sign in to the registry using a browser or personal access token',
+  implemented: true,
+  flags: LOGIN_FLAGS,
+  runJson: (args, flags) => runLoginJson(args, flags),
   run: async (args, flags) => {
     if (flags.complete !== undefined) {
-      const result = await loginCommand.runJson?.(args, { ...flags, json: true })
-      if (result === undefined) throw new Error('login JSON handler is missing')
+      const result = await runLoginJson(args, { ...flags, json: true })
       if (!result.ok) {
         writeCliError({ what: result.error.message, fix: result.error.fix ?? 'start a new login' })
         return result.exitCode ?? 1
@@ -110,7 +118,7 @@ export const loginCommand: Command = {
     }
     if (
       args.length > 0 ||
-      Object.keys(flags).some((name) => name !== 'browser' && name !== 'token') ||
+      Object.keys(flags).some((name) => name !== 'browser' && name !== 'token' && name !== 'json') ||
       (flags.browser !== undefined && typeof flags.browser !== 'boolean') ||
       (flags.token !== undefined && typeof flags.token !== 'boolean')
     ) {
@@ -151,7 +159,7 @@ export const loginCommand: Command = {
     process.stdout.write('Cancelled.\n')
     return 1
   },
-}
+})
 
 function durableLoginError(
   failure: Exclude<Awaited<ReturnType<typeof completeDurableCliLogin>>, { ok: true }>['error'],

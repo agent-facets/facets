@@ -8,7 +8,7 @@ import {
   uncappedGunzip,
 } from '@agent-facets/engine'
 import { type ArchiveVerificationFailure, type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -44,7 +44,7 @@ import { runBuildViewAndCapture } from './run-build-view.ts'
  * separate parse of the source-tree `facet.json` — so the artifact's
  * own identity is always what reaches the registry.
  */
-export const publishCommand: Command = {
+export const publishCommand = defineCommand({
   name: 'publish',
   description: 'Publish a facet to the registry',
   usage: '[directory]',
@@ -292,7 +292,7 @@ export const publishCommand: Command = {
     process.stdout.write(`Published ${facetManifest.name}@${facetManifest.version}.\n`)
     return 0
   },
-}
+})
 
 /**
  * Render an archive-verification failure as a multi-line detail block for

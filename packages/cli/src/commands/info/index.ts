@@ -1,7 +1,7 @@
 import { declaredFiles, type FacetView, type InspectAssetType, loadFacetView, selectorFor } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InfoView } from '../../tui/views/info/info-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
@@ -22,7 +22,7 @@ const DEFAULT_WIDTH = 80
  * registry's latest version, which is the only way to see it before
  * installing.
  */
-export const infoCommand: Command = {
+export const infoCommand = defineCommand({
   name: 'info',
   description: "Show a summary of a facet: what it does and what's in it",
   usage: '<name>',
@@ -90,7 +90,7 @@ export const infoCommand: Command = {
     }
     return 0
   },
-}
+})
 
 /**
  * The `facet info` summary as data. Values are the manifest's exact

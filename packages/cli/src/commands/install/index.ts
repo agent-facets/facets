@@ -1,7 +1,7 @@
 import { type InstallOperation, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
@@ -20,7 +20,7 @@ import { adapterFailure, installJsonResult, jsonAdapters, withJsonAbort } from '
  * The actual pipeline lives in `runInstall` from `@agent-facets/engine`;
  * this file is just the display + routing wrapper.
  */
-export const installCommand: Command = {
+export const installCommand = defineCommand({
   name: 'install',
   description: 'Install all facets from facets.json',
   implemented: true,
@@ -187,4 +187,4 @@ export const installCommand: Command = {
 
     return 0
   },
-}
+})

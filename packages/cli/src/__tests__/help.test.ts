@@ -1,18 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import type { Command } from '../commands.ts'
+import { defineCommand, type FlagDefs } from '../commands.ts'
 import { printCommandHelp } from '../help.ts'
 import { captureLog } from './helpers/capture-log.ts'
 
-function helpFor(flags: Command['flags']): string {
+function helpFor(flags: FlagDefs | undefined): string {
   return captureLog(() => {
-    printCommandHelp({
-      name: 'demo',
-      description: 'test command',
-      implemented: true,
-      ...(flags ? { flags } : {}),
-      run: async () => 0,
-      runJson: async () => ({ ok: true, data: null }),
-    })
+    printCommandHelp(
+      defineCommand({
+        name: 'demo',
+        description: 'test command',
+        implemented: true,
+        ...(flags ? { flags } : {}),
+        run: async () => 0,
+        runJson: async () => ({ ok: true, data: null }),
+      }),
+    )
   })
 }
 
@@ -62,10 +64,10 @@ describe('per-command help — short aliases', () => {
   test('a command with no short aliases renders exactly as before', () => {
     const out = helpFor({
       force: { type: 'boolean', description: 'Overwrite existing files' },
-      name: { type: 'string', description: 'Facet name' },
+      name: { type: 'string', valueName: 'name', description: 'Facet name' },
     })
     const rows = optionRows(out)
-    expect(rows.map((r) => r.label)).toEqual(['--force', '--name', '--json', '--help'])
+    expect(rows.map((r) => r.label)).toEqual(['--force', '--name <name>', '--json', '--help'])
     expect(new Set(rows.map((r) => r.descriptionColumn)).size).toBe(1)
     expect(out).not.toContain('-f,')
   })

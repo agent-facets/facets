@@ -7,7 +7,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../commands.ts'
+import { defineCommand } from '../command.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
 import {
   buildFailureMessages,
@@ -27,7 +27,7 @@ import { resolveTargetDir } from './resolve-dir.ts'
  */
 const BUILD_JSON_SCHEMA_VERSION = '2'
 
-export const buildCommand: Command = {
+export const buildCommand = defineCommand({
   name: 'build',
   description: 'Build a facet from the current directory',
   usage: '[directory]',
@@ -40,10 +40,6 @@ export const buildCommand: Command = {
     verify: {
       type: 'boolean',
       description: 'Validate the facet without writing any output (no dist/ writes)',
-    },
-    json: {
-      type: 'boolean',
-      description: 'Emit machine-readable JSON to stdout instead of the interactive view',
     },
   },
   runJson: async (args, flags) => {
@@ -94,7 +90,7 @@ export const buildCommand: Command = {
       warnings,
     }
   },
-  run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
+  run: async (args, flags) => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {
       console.error(resolved.message)
@@ -173,7 +169,7 @@ export const buildCommand: Command = {
       return 1
     }
   },
-}
+})
 
 /**
  * Emit the versioned JSON build document to stdout. `verified` is true when

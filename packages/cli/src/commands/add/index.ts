@@ -8,7 +8,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
@@ -32,7 +32,7 @@ import { adapterFailure, installJsonResult, jsonAdapters, withJsonAbort } from '
  * ensures adapters, renders progress, and maps the result to an exit
  * code + error block.
  */
-export const addCommand: Command = {
+export const addCommand = defineCommand({
   name: 'add',
   description: 'Add a facet to facets.json and install it',
   usage: '<source> [more sources...]',
@@ -197,7 +197,7 @@ export const addCommand: Command = {
     })
     return 1
   },
-}
+})
 
 function writeParseError(specifier: string, error: ParseError): void {
   writeCliError({

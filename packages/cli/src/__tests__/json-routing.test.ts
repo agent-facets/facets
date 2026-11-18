@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { type Command, commands } from '../commands.ts'
+import { type AnyCommand, commands, defineCommand } from '../commands.ts'
 import { run } from '../run.ts'
 
-async function invoke(argv: string[], registry: Record<string, Command>) {
+async function invoke(argv: string[], registry: Record<string, AnyCommand>) {
   let output = ''
   const original = process.stdout.write
   process.stdout.write = ((chunk: string | Uint8Array) => {
@@ -17,17 +17,17 @@ async function invoke(argv: string[], registry: Record<string, Command>) {
   }
 }
 
-const demo: Command = {
+const demo: AnyCommand = defineCommand({
   name: 'demo',
   aliases: ['d'],
   description: 'Example',
   implemented: true,
-  flags: { version: { type: 'string', description: 'Set version' } },
+  flags: { version: { type: 'string', valueName: 'version', description: 'Set version' } },
   run: async () => {
     throw new Error('human handler must not run')
   },
   runJson: async (args, flags) => ({ ok: true, data: { args, flags } }),
-}
+})
 
 describe('JSON routing', () => {
   test('every registered command has an explicit JSON handler', () => {
@@ -101,9 +101,9 @@ describe('JSON routing', () => {
 
   test('--json after `--` is an operand, not an output mode', async () => {
     let seen: string[] | undefined
-    const human: Command = {
+    const human: AnyCommand = {
       ...demo,
-      run: async (args) => {
+      run: async (args: string[]) => {
         seen = args
         return 0
       },

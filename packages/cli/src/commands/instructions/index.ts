@@ -1,5 +1,5 @@
 import { FacetManifestSchema } from '@agent-facets/protocol'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { DEFAULT_TOPIC, INSTRUCTION_TOPICS, isInstructionTopic, promptFor } from '../../prompts/index.ts'
 import { writeCliError } from '../../util/errors.ts'
 
@@ -11,7 +11,7 @@ import { writeCliError } from '../../util/errors.ts'
  * facets. The overview (default) opens with a generated index of every topic;
  * topics: overview (default), manifest, authoring, usage.
  */
-export const instructionsCommand: Command = {
+export const instructionsCommand = defineCommand({
   name: 'instructions',
   description: 'Print CLI usage instructions FOR AI AGENTS',
   usage: '[topic]',
@@ -70,4 +70,4 @@ export const instructionsCommand: Command = {
 
     return 0
   },
-}
+})

@@ -4,7 +4,7 @@ import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { ConfirmPrompt } from '../../tui/components/confirm-prompt.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
@@ -39,22 +39,29 @@ async function confirmOverwrite(display: string): Promise<boolean> {
   return answer
 }
 
-export const createCommand: Command = {
+export const createCommand = defineCommand({
   name: 'create',
   description: 'Create a new facet project interactively',
   usage: '[directory]',
   implemented: true,
   flags: {
     force: { type: 'boolean', description: 'Overwrite existing facet.json' },
-    name: { type: 'string', description: 'Facet name (headless mode)' },
-    description: { type: 'string', description: 'Facet description (headless mode)' },
-    version: { type: 'string', description: 'Facet version, semver (headless mode; default 0.0.0)' },
+    name: { type: 'string', valueName: 'name', description: 'Facet name (headless mode)' },
+    description: { type: 'string', valueName: 'text', description: 'Facet description (headless mode)' },
+    version: {
+      type: 'string',
+      valueName: 'version',
+      description: 'Facet version, semver (headless mode; default 0.0.0)',
+    },
     private: { type: 'boolean', description: 'Mark the facet private (headless mode)' },
-    skill: { type: 'array', description: 'Skill to scaffold, repeatable (headless mode)' },
-    agent: { type: 'array', description: 'Agent to scaffold, repeatable (headless mode)' },
-    command: { type: 'array', description: 'Command to scaffold, repeatable (headless mode)' },
-    readme: { type: 'boolean', description: 'Scaffold a README.md (default on; pass --no-readme to skip)' },
-    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout (headless mode)' },
+    skill: { type: 'array', valueName: 'name', description: 'Skill to scaffold, repeatable (headless mode)' },
+    agent: { type: 'array', valueName: 'name', description: 'Agent to scaffold, repeatable (headless mode)' },
+    command: { type: 'array', valueName: 'name', description: 'Command to scaffold, repeatable (headless mode)' },
+    readme: {
+      type: 'boolean',
+      description: 'Scaffold a README.md (the default)',
+      negative: { name: 'no-readme', description: 'Do not scaffold or declare a README.md' },
+    },
   },
   runJson: async (args, flags) => {
     if (args.length > 1) {
@@ -104,7 +111,7 @@ export const createCommand: Command = {
       data: { name: decision.options.name, version: decision.options.version, directory: resolved.display, files },
     }
   },
-  run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
+  run: async (args, flags) => {
     const resolved = await resolveTargetDir(args[0], { mustExist: false })
     if (!resolved.ok) {
       console.error(resolved.message)
@@ -187,4 +194,4 @@ export const createCommand: Command = {
 
     return 0
   },
-}
+})

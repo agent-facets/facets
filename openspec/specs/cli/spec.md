@@ -1411,6 +1411,21 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 - **THEN** the command SHALL fail before mutation with the complete consent information
 - **AND** when `--accept-mcp` is supplied, the command SHALL proceed without prompting if the work is otherwise valid
 
+### Requirement: Commands accept only declared, documented options
+
+Every option spelling a command accepts SHALL be declared once with help text: canonical long names, short aliases, negative spellings such as `--no-browser`, value placeholders such as `--complete <login-id>`, and option families such as `modify`'s `--adapter-<name> <json>`. Text help and JSON help SHALL both be generated from those declarations and SHALL list every accepted spelling. A negative spelling SHALL be accepted only where declared; `--no-<flag>` SHALL NOT be implied. Boolean options SHALL also accept `--<flag>=true` and `--<flag>=false`. An unknown option, an undeclared negative, a repeated single-value option, a missing value, or a non-boolean value for a boolean option SHALL fail with exit code 1 before the command runs, as one `INVALID_ARGUMENTS` document under `--json` and as an error on stderr otherwise.
+
+#### Scenario: A typo does not run the command
+
+- **WHEN** a user runs `facet install --frozen-lockfil`
+- **THEN** the process SHALL exit with code 1 without running the install
+- **AND** the project SHALL be unchanged
+
+#### Scenario: Help lists negative spellings
+
+- **WHEN** a user runs `facet login --help`
+- **THEN** the options SHALL list both `--browser` and `--no-browser`, each with its own description
+
 ### Requirement: Commands provide non-interactive JSON output
 
 Every registered command, alias, adapter subcommand, help and version invocation SHALL accept `--json` before the end-of-options separator. JSON mode SHALL suppress interactive prompts, live displays, browser launches, and editors. It SHALL NOT imply consent or overwrite permission. The CLI SHALL emit exactly one JSON document to stdout on every handled outcome, with `schemaVersion: "3"`, canonical `command`, `ok`, `warnings`, and exactly one of `data` or `error`. Error objects SHALL carry a stable `code` and `message` and MAY include `details`, `fix`, and `docsUrl`. Unexpected handled failures SHALL report a sanitized error and exit 2. Uncatchable termination cannot guarantee a document.

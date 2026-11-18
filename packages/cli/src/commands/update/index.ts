@@ -9,7 +9,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
@@ -46,7 +46,7 @@ import { candidateRows, classifyNoOp, defaultSelections, describeNoOp, type Upda
  * that could install an adapter, take a lock, or write a file may run
  * before the user has confirmed a selection they can still cancel.
  */
-export const updateCommand: Command = {
+export const updateCommand = defineCommand({
   name: 'update',
   aliases: ['upgrade'],
   description: 'Update the facets this project declares (see self-update for the CLI itself)',
@@ -67,7 +67,6 @@ export const updateCommand: Command = {
       type: 'boolean',
       description: 'Print the plan; do not modify any files',
     },
-    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
   runJson: async (args, flags) => runUpdateJson(args, flags),
   run: async (args, flags, context) => {
@@ -457,7 +456,7 @@ export const updateCommand: Command = {
     })
     return 1
   },
-}
+})
 
 /**
  * Stands in for the MCP consent prompt on the `--json` path, where there

@@ -7,7 +7,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import { type SearchResult, SearchView } from '../../tui/views/search/search-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -29,7 +29,7 @@ import { translateEngineRegistryError } from '../../util/registry-errors.ts'
  * re-exports of the registry's published OpenAPI specification —
  * `WirePackageListItem` is the per-result shape.
  */
-export const searchCommand: Command = {
+export const searchCommand = defineCommand({
   name: 'search',
   description: 'Search the registry for facets',
   usage: '[term]',
@@ -148,4 +148,4 @@ export const searchCommand: Command = {
     }
     return exitCode
   },
-}
+})

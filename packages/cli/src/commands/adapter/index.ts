@@ -4,7 +4,7 @@ import {
   installAdapter,
   removeAdapter,
 } from '@agent-facets/engine'
-import type { Command } from '../../commands.ts'
+import { defineCommand } from '../../command.ts'
 import {
   ADAPTER_ADD_SUBCOMMAND,
   ADAPTER_INSTALL_DEPRECATION_WARNING,
@@ -34,7 +34,7 @@ import { pickAndInstallAdapters } from './pick-and-install.ts'
  * the router resolves for top-level names only, so the alias is a case
  * in this switch — which is also what lets it warn before delegating.
  */
-export const adapterCommand: Command = {
+export const adapterCommand = defineCommand({
   name: 'adapter',
   description: 'Manage adapter installations',
   usage: `${ADAPTER_SUBCOMMAND_USAGE} [args]`,
@@ -151,7 +151,7 @@ export const adapterCommand: Command = {
       }
     }
   },
-}
+})
 
 /**
  * Terminal-log adapter installer. Thin wrapper around the picker-safe
