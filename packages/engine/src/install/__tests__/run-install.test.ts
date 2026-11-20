@@ -160,7 +160,7 @@ function installFakeAdapter(baseDir: string, name: string): void {
     `
 import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function base(req) { return join(req.projectRoot, '.${name}') }
+function base(req) { return join(req.context.target.projectRoot, '.${name}') }
 function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
@@ -168,11 +168,13 @@ export default {
   mcpServers: false,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall(req) {
-      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+      return planSingleFileInstall({ file: file(req), boundary: base(req), storageRoot: base(req) }, req.content, req.metadata)
     },
     async planRemoval(req) {
-      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+      return planSingleFileRemoval({ file: file(req), boundary: base(req), storageRoot: base(req) })
     },
   },
 }
@@ -499,25 +501,28 @@ describe('runInstall — frozen-lockfile mode', () => {
 
     const io: string[] = []
     const mcp = recordingMcpCapability(() => join(projectRoot, '.rec', 'mcp.json'))
-    const asset = (req: { projectRoot: string; assetType: string; name: string }) =>
-      join(req.projectRoot, '.rec', `${req.assetType}s`, `${req.name}.md`)
+    // This fixture serves project scope only, and installs go nowhere else.
+    const base = join(projectRoot, '.rec')
+    const asset = (req: { assetType: string; name: string }) => join(base, `${req.assetType}s`, `${req.name}.md`)
     const adapter: Adapter = {
       name: 'rec',
       apiVersion: ADAPTER_API_VERSION,
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(req) {
           io.push(`install:${req.name}`)
           return planSingleFileInstall(
-            { file: asset(req), boundary: join(req.projectRoot, '.rec') },
+            { file: asset(req), boundary: base, storageRoot: base },
             req.content,
             req.metadata as Record<string, unknown>,
           )
         },
         async planRemoval(req) {
           io.push(`delete:${req.name}`)
-          return planSingleFileRemoval({ file: asset(req), boundary: join(req.projectRoot, '.rec') })
+          return planSingleFileRemoval({ file: asset(req), boundary: base, storageRoot: base })
         },
       },
     }
@@ -678,6 +683,8 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
         throw new Error('contract method invoked despite incompatibility')
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           throw new Error('contract method invoked despite incompatibility')
         },

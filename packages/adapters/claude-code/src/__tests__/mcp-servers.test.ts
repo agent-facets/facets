@@ -10,7 +10,24 @@ import {
   runMcpServerMatrix,
   UNOWNED_NAME,
 } from '@agent-facets/adapter-test-kit'
-import adapter from '../index.ts'
+import definition from '../index.ts'
+
+/** The adapter the package default-exports, once its definition result is checked. */
+const adapter = (() => {
+  if (!definition.ok) throw new Error('the adapter definition must be valid')
+  return definition.data
+})()
+
+/** A project planning context, with a home that must never be consulted for project placement. */
+function projectContext(projectRoot: string): PlanningContext {
+  return {
+    target: { scope: 'project', projectRoot },
+    homeDirectory: '/home/unused',
+    environment: {},
+  }
+}
+
+import type { PlanningContext } from '@agent-facets/adapter'
 import { claudeCodeMcpServers } from '../mcp-servers.ts'
 
 const DOCUMENT = '.mcp.json'
@@ -199,7 +216,9 @@ runMcpServerMatrix({ capability: claudeCodeMcpServers, seeds })
 
 describe('claude-code MCP capability', () => {
   test('is declared on the adapter', () => {
-    expect(adapter.mcpServers).toBe(claudeCodeMcpServers)
+    if (adapter.mcpServers === false) expect.unreachable()
+    expect(adapter.mcpServers.supportedScopes).toEqual(claudeCodeMcpServers.supportedScopes)
+    expect(adapter.mcpServers.locationEnvironment).toEqual(claudeCodeMcpServers.locationEnvironment)
   })
 
   describe('native document edits', () => {
@@ -235,7 +254,7 @@ describe('claude-code MCP capability', () => {
       writeFileSync(join(root, DOCUMENT), before)
 
       const planned = await claudeCodeMcpServers.plan({
-        projectRoot: root,
+        context: projectContext(root),
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
         previouslyOwnedNames: [],
       })
@@ -258,7 +277,7 @@ describe('claude-code MCP capability', () => {
       writeFileSync(join(root, DOCUMENT), '\uFEFF{\n  "mcpServers": {}\n}\n')
 
       const planned = await claudeCodeMcpServers.plan({
-        projectRoot: root,
+        context: projectContext(root),
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
         previouslyOwnedNames: [],
       })
@@ -294,7 +313,7 @@ describe('claude-code MCP capability', () => {
 
     for (const { declaration, offender } of cases) {
       const result = await claudeCodeMcpServers.plan({
-        projectRoot: '/does-not-need-to-exist',
+        context: projectContext('/does-not-need-to-exist'),
         desired: [{ name: 'fs', declaration }],
         previouslyOwnedNames: [],
       })

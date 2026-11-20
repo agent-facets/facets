@@ -50,15 +50,21 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           return planSingleFileInstall(
-            { file: file(request.assetType, request.name), boundary: baseDir() },
+            { file: file(request.assetType, request.name), boundary: baseDir(), storageRoot: baseDir() },
             request.content,
             request.metadata as Record<string, unknown>,
           )
         },
         async planRemoval(request) {
-          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+          return planSingleFileRemoval({
+            file: file(request.assetType, request.name),
+            boundary: baseDir(),
+            storageRoot: baseDir(),
+          })
         },
       },
     },

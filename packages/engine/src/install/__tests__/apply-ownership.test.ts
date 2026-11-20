@@ -51,6 +51,7 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
     root: skillRoot(name),
     primaryFile: join(skillRoot(name), 'SKILL.md'),
     boundary: base(),
+    storageRoot: base(),
   })
   return {
     io,
@@ -60,6 +61,8 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           io.push(`install:${request.assetType}:${request.name}`)
           if (opts.failInstallOf?.has(request.name)) {
@@ -74,7 +77,7 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
             })
           }
           return planSingleFileInstall(
-            { file: flatFile(request.assetType, request.name), boundary: base() },
+            { file: flatFile(request.assetType, request.name), boundary: base(), storageRoot: base() },
             request.content,
             request.metadata as Record<string, unknown>,
           )
@@ -84,7 +87,11 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
           if (request.assetType === 'skill') {
             return planSkillBundleRemoval(paths(request.name), request.ownedCompanionPaths)
           }
-          return planSingleFileRemoval({ file: flatFile(request.assetType, request.name), boundary: base() })
+          return planSingleFileRemoval({
+            file: flatFile(request.assetType, request.name),
+            boundary: base(),
+            storageRoot: base(),
+          })
         },
       },
     },

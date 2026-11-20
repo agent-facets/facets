@@ -34,13 +34,17 @@ function interpolated(name: string): string {
 }
 
 function request(desired: readonly McpServerContribution[]): PlanMcpServersRequest {
-  return { projectRoot: '/project', desired, previouslyOwnedNames: [] }
+  return {
+    context: { target: { scope: 'project', projectRoot: '/project' }, homeDirectory: '/home/alice', environment: {} },
+    desired,
+    previouslyOwnedNames: [],
+  }
 }
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 
-function document(path: string, contents?: string): McpTextDocument {
-  return { path, state: contents === undefined ? { kind: 'absent' } : regularFile(encode(contents), 0o644) }
+function document(path: string, contents?: string, boundary = '/project'): McpTextDocument {
+  return { path, boundary, state: contents === undefined ? { kind: 'absent' } : regularFile(encode(contents), 0o644) }
 }
 
 function planInput(overrides: Partial<PrepareMcpTextPlanInput> = {}): PrepareMcpTextPlanInput {
@@ -142,16 +146,101 @@ describe('prepareMcpTextPlan', () => {
     expect(result.failure.value).toBe('{env:SECRET}')
   })
 
-  test('an edit for an uninspected document is refused rather than planned', () => {
-    expect(() =>
-      prepareMcpTextPlan(
-        planInput({
-          presentNames: new Set(['fs']),
-          compare: () => 'divergent',
-          buildEdits: () => ({ ok: true, edits: [{ path: '/project/elsewhere.json', contents: '{}\n' }] }),
+  test('an edit for an uninspected document is refused as data rather than planned', () => {
+    const result = prepareMcpTextPlan(
+      planInput({
+        presentNames: new Set(['fs']),
+        compare: () => 'divergent',
+        buildEdits: () => ({ ok: true, edits: [{ path: '/project/elsewhere.json', contents: '{}\n' }] }),
+      }),
+    )
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'invalid-document') expect.unreachable()
+    expect(result.failure.path).toBe('/project/elsewhere.json')
+  })
+
+  test('a document outside its authorized directory is refused before anything is classified', () => {
+    const result = prepareMcpTextPlan(
+      planInput({
+        documents: [document('/elsewhere/a.json', undefined, '/project')],
+        compare: () => expect.unreachable(),
+        buildEdits: () => expect.unreachable(),
+      }),
+    )
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'invalid-document') expect.unreachable()
+    expect(result.failure.path).toBe('/elsewhere/a.json')
+  })
+
+  test('a document cannot be its own authorized directory', () => {
+    const result = prepareMcpTextPlan(planInput({ documents: [document('/project', undefined, '/project')] }))
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('invalid-document')
+  })
+
+  test('a user-scope document is written inside its own directory, with no project involved', () => {
+    const userDocument = document(
+      '/home/alice/.config/opencode/opencode.jsonc',
+      undefined,
+      '/home/alice/.config/opencode',
+    )
+    const result = prepareMcpTextPlan(
+      planInput({
+        request: {
+          ...request([contribution('fs', stdio('srv'))]),
+          context: { target: { scope: 'user' }, homeDirectory: '/home/alice', environment: {} },
+        },
+        documents: [userDocument],
+        compare: () => 'divergent',
+        presentNames: new Set(['fs']),
+        buildEdits: () => ({ ok: true, edits: [{ path: userDocument.path, contents: '{}\n' }] }),
+      }),
+    )
+
+    if (!result.ok) expect.unreachable()
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    expect(result.plan.action.mutations[0]?.boundary).toBe('/home/alice/.config/opencode')
+  })
+
+  test('each mutation carries the boundary of its own document', () => {
+    const result = prepareMcpTextPlan(
+      planInput({
+        documents: [
+          document('/project/a.json', undefined, '/project'),
+          document('/project/.x/b.json', undefined, '/project/.x'),
+        ],
+        presentNames: new Set(['fs']),
+        compare: () => 'divergent',
+        buildEdits: () => ({
+          ok: true,
+          edits: [
+            { path: '/project/a.json', contents: 'a\n' },
+            { path: '/project/.x/b.json', contents: 'b\n' },
+          ],
         }),
-      ),
-    ).toThrow(/uninspected document/)
+      }),
+    )
+
+    if (!result.ok) expect.unreachable()
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    expect(result.plan.action.mutations.map((mutation) => mutation.boundary)).toEqual(['/project', '/project/.x'])
+  })
+
+  test('an unchanged plan still discloses every inspected document, absent ones included', () => {
+    const result = prepareMcpTextPlan(
+      planInput({
+        documents: [document('/project/a.json', '{}\n'), document('/project/b.json')],
+        presentNames: new Set(['fs']),
+        compare: () => 'equivalent',
+        buildEdits: () => expect.unreachable(),
+      }),
+    )
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.action.kind).toBe('unchanged')
+    expect(result.plan.documentPaths).toEqual(['/project/a.json', '/project/b.json'])
   })
 
   test('a mutation carries the exact state its document was inspected in', () => {

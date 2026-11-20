@@ -10,6 +10,7 @@ import { SUPPORTED_ADAPTER_APIS } from '../adapters/api-compatibility.ts'
 import { FileTransaction } from '../fs/index.ts'
 import type { PreviousOwnership } from '../install/commit/ownership.ts'
 import { materialize } from '../install/materialize.ts'
+import { captureProjectPlanningContext } from '../install/planning-context.ts'
 
 /**
  * The plan a facet contributes when every asset keeps its authored name.
@@ -62,6 +63,11 @@ function ownershipIndex(assets: readonly MaterializedAsset[]): Map<string, Previ
 
 let projectRoot: string
 
+/** The planning context an install of `projectRoot` captures, with no ambient location input. */
+function projectPlanningContext() {
+  return captureProjectPlanningContext(projectRoot, [], { environment: {}, home: '/home/unused' })
+}
+
 beforeEach(() => {
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'materialize-test-')))
 })
@@ -87,16 +93,22 @@ function buildRecordingAdapter(name: string): {
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         calls.push({ name: request.name, metadata: request.metadata })
         return planSingleFileInstall(
-          { file: file(request.assetType, request.name), boundary: baseDir() },
+          { file: file(request.assetType, request.name), boundary: baseDir(), storageRoot: baseDir() },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+        return planSingleFileRemoval({
+          file: file(request.assetType, request.name),
+          boundary: baseDir(),
+          storageRoot: baseDir(),
+        })
       },
     },
   }
@@ -124,16 +136,22 @@ function buildSdkAdapter(name: string): {
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         installCalls++
         return planSingleFileInstall(
-          { file: file(request.assetType, request.name), boundary: baseDir() },
+          { file: file(request.assetType, request.name), boundary: baseDir(), storageRoot: baseDir() },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+        return planSingleFileRemoval({
+          file: file(request.assetType, request.name),
+          boundary: baseDir(),
+          storageRoot: baseDir(),
+        })
       },
     },
   }
@@ -170,7 +188,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
@@ -185,7 +203,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -218,7 +236,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
@@ -243,7 +261,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -277,7 +295,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     const second = await materialize({
@@ -286,7 +304,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -312,7 +330,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
@@ -327,7 +345,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -354,7 +372,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     expect(calls).toHaveLength(1)
@@ -369,7 +387,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -410,7 +428,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     const second = await materialize({
@@ -419,7 +437,7 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
@@ -461,7 +479,7 @@ describe('materialize — adapter-extras cannot override computed identity', () 
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
 
@@ -489,6 +507,8 @@ describe('materialize — adapter SDK API invariant check', () => {
         throw new Error('contract method invoked despite incompatibility')
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           throw new Error('contract method invoked despite incompatibility')
         },
@@ -504,7 +524,7 @@ describe('materialize — adapter SDK API invariant check', () => {
       adapters: [incompatible],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (result.ok) expect.unreachable()
@@ -533,6 +553,8 @@ describe('materialize — adapter SDK API invariant check', () => {
         throw new Error('contract method invoked despite incompatibility')
       },
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall() {
           throw new Error('contract method invoked despite incompatibility')
         },
@@ -548,7 +570,7 @@ describe('materialize — adapter SDK API invariant check', () => {
       adapters: [positional],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction: new FileTransaction(),
     })
     if (result.ok) expect.unreachable()
@@ -584,19 +606,25 @@ describe('materialize — a failed batch leaves nothing behind', () => {
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           planCount++
           if (planCount === 2) {
             return { ok: false, failure: { code: 'io-failed', path: request.name, message: 'boom' } }
           }
           return planSingleFileInstall(
-            { file: join(baseDir, 'skills', `${request.name}.md`), boundary: baseDir },
+            { file: join(baseDir, 'skills', `${request.name}.md`), boundary: baseDir, storageRoot: baseDir },
             request.content,
             request.metadata as Record<string, unknown>,
           )
         },
         async planRemoval(request) {
-          return planSingleFileRemoval({ file: join(baseDir, 'skills', `${request.name}.md`), boundary: baseDir })
+          return planSingleFileRemoval({
+            file: join(baseDir, 'skills', `${request.name}.md`),
+            boundary: baseDir,
+            storageRoot: baseDir,
+          })
         },
       },
     }
@@ -608,7 +636,7 @@ describe('materialize — a failed batch leaves nothing behind', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      projectRoot,
+      planningContext: projectPlanningContext(),
       transaction,
     })
     if (result.ok) expect.unreachable()

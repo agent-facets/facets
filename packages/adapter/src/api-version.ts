@@ -12,22 +12,26 @@
 
 /**
  * The adapter SDK API contract identifier this SDK stamps into every adapter
- * returned by `defineAdapter()`. Identifies the read-only *planning* contract:
- * an adapter computes exact per-file state transitions and returns them, and
- * the caller performs every write.
+ * `defineAdapter()` successfully returns. Identifies the scope-aware read-only
+ * *planning* contract: every request carries an explicit project or user
+ * target and caller-supplied location inputs, every capability declares the
+ * scopes it serves and the environment it reads, plans disclose where they
+ * looked, and the caller performs every write.
  *
  * The exact-token compatibility machinery cannot inspect method signatures or
  * probe for fields, so every contract change is signalled by this identifier
- * and never inferred.
+ * and never inferred. The equality of this token with the lockfile format
+ * version `0.4` is a coincidence and means nothing in either direction.
  *
  * Superseded tokens deliberately have no constants here. `0.0` named the
  * positional method contract; `0.1` and `0.2` named contracts in which the
  * adapter itself mutated the filesystem and was responsible for undoing its
- * own work. No caller can offer those the guarantees this one makes — exact
- * byte restoration, concurrency preflight, batch atomicity — so naming them
- * would only invite someone to add them back to a support set.
+ * own work; `0.3` named the planning contract in which every request carried
+ * a project root, whatever its scope. No caller can offer those what this one
+ * requires, so naming them would only invite someone to add them back to a
+ * support set.
  */
-export const ADAPTER_API_VERSION = '0.3' as const
+export const ADAPTER_API_VERSION = '0.4' as const
 
 /**
  * The top-level `package.json` field where a published npm adapter release

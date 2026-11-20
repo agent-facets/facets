@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { Adapter, AssetCapability, AssetRequestContext, McpServerCapability } from '@agent-facets/adapter'
+import type { Adapter, AssetCapability, McpServerCapability, PlanningContext } from '@agent-facets/adapter'
 import {
   ADAPTER_API_VERSION,
   planSingleFileInstall,
@@ -9,7 +9,7 @@ import {
 } from '@agent-facets/adapter'
 
 /**
- * A realistic `0.3` adapter for engine tests.
+ * A realistic `0.4` adapter for engine tests.
  *
  * It composes the published SDK planners rather than hand-rolling plans, so
  * these tests exercise the same containment rules, front-matter assembly, and
@@ -29,25 +29,35 @@ export interface TestAdapterOptions {
   readonly assets?: false
 }
 
-function baseDirFor(context: AssetRequestContext, name: string): string | null {
-  if (context.scope === 'system') return null
-  return join(context.projectRoot, `.${name}`)
+function baseDirFor(context: PlanningContext, name: string): string | null {
+  if (context.target.scope !== 'project') return null
+  return join(context.target.projectRoot, `.${name}`)
+}
+
+function unsupportedScope(context: PlanningContext) {
+  return {
+    ok: false,
+    failure: { code: 'unsupported-scope', scope: context.target.scope, supportedScopes: ['project'] },
+  } as const
 }
 
 export function createTestAdapter(name: string, options: TestAdapterOptions = {}): Adapter {
   const assets: AssetCapability = {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
+
     async planInstall(request) {
       options.onPlanInstall?.({ name: request.name, metadata: request.metadata })
       if (options.failPlanning === 'install') {
         return { ok: false, failure: { code: 'io-failed', path: request.name, message: 'planning refused' } }
       }
-      const baseDir = baseDirFor(request, name)
-      if (baseDir === null) return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
+      const baseDir = baseDirFor(request.context, name)
+      if (baseDir === null) return unsupportedScope(request.context)
       const metadata = request.metadata as Record<string, unknown>
       if (request.assetType === 'skill') {
         const root = join(baseDir, 'skills', request.name)
         return planSkillBundleInstall(
-          { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir },
+          { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir, storageRoot: baseDir },
           {
             content: request.content,
             metadata,
@@ -57,7 +67,7 @@ export function createTestAdapter(name: string, options: TestAdapterOptions = {}
         )
       }
       return planSingleFileInstall(
-        { file: join(baseDir, `${request.assetType}s`, `${request.name}.md`), boundary: baseDir },
+        { file: join(baseDir, `${request.assetType}s`, `${request.name}.md`), boundary: baseDir, storageRoot: baseDir },
         request.content,
         metadata,
       )
@@ -67,18 +77,19 @@ export function createTestAdapter(name: string, options: TestAdapterOptions = {}
       if (options.failPlanning === 'removal') {
         return { ok: false, failure: { code: 'io-failed', path: request.name, message: 'planning refused' } }
       }
-      const baseDir = baseDirFor(request, name)
-      if (baseDir === null) return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
+      const baseDir = baseDirFor(request.context, name)
+      if (baseDir === null) return unsupportedScope(request.context)
       if (request.assetType === 'skill') {
         const root = join(baseDir, 'skills', request.name)
         return planSkillBundleRemoval(
-          { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir },
+          { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir, storageRoot: baseDir },
           request.ownedCompanionPaths,
         )
       }
       return planSingleFileRemoval({
         file: join(baseDir, `${request.assetType}s`, `${request.name}.md`),
         boundary: baseDir,
+        storageRoot: baseDir,
       })
     },
   }

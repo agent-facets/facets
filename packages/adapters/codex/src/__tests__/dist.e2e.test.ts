@@ -15,7 +15,10 @@ import {
   loadDistMcpCapability,
   STDIO_SERVER,
 } from '@agent-facets/adapter-test-kit'
-import sourceAdapter from '../index.ts'
+import definition from '../index.ts'
+
+if (!definition.ok) throw new Error('the adapter definition must be valid')
+const sourceAdapter = definition.data
 
 const bundlePath = join(import.meta.dir, '../../dist/index.mjs')
 
@@ -28,7 +31,7 @@ test('bundled TOML editor preserves comments after bundling', async () => {
   try {
     await Bun.write(configPath, '# keep me\nmodel = "gpt-5.6"\n')
     const planned = await capability.plan({
-      projectRoot: root,
+      context: { target: { scope: 'project', projectRoot: root }, homeDirectory: '/home/unused', environment: {} },
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })

@@ -13,7 +13,24 @@ import {
   UNOWNED_NAME,
 } from '@agent-facets/adapter-test-kit'
 import { parse as parseToml } from 'smol-toml'
-import adapter from '../index.ts'
+import definition from '../index.ts'
+
+/** The adapter the package default-exports, once its definition result is checked. */
+const adapter = (() => {
+  if (!definition.ok) throw new Error('the adapter definition must be valid')
+  return definition.data
+})()
+
+/** A project planning context, with a home that must never be consulted for project placement. */
+function projectContext(projectRoot: string): PlanningContext {
+  return {
+    target: { scope: 'project', projectRoot },
+    homeDirectory: '/home/unused',
+    environment: {},
+  }
+}
+
+import type { PlanningContext } from '@agent-facets/adapter'
 import { codexMcpServers } from '../mcp-servers.ts'
 
 const DOCUMENT = '.codex/config.toml'
@@ -230,7 +247,7 @@ startup_timeout_sec = 10.0   # native extension: must survive the update
     await Bun.write(configPath, before)
 
     const planned = await codexMcpServers.plan({
-      projectRoot: root,
+      context: projectContext(root),
       desired: [{ name: 'docs', declaration: { type: 'stdio', command: 'docs-server', args: ['--port', '4000'] } }],
       previouslyOwnedNames: ['docs'],
     })
@@ -258,7 +275,7 @@ args = [ "--port", "4000" ]
 
   test('creates the .codex directory only when committing, never while planning', async () => {
     const planned = await codexMcpServers.plan({
-      projectRoot: root,
+      context: projectContext(root),
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
@@ -276,7 +293,7 @@ args = [ "--port", "4000" ]
     await Bun.write(configPath, '[mcp_servers]\n')
 
     const planned = await codexMcpServers.plan({
-      projectRoot: root,
+      context: projectContext(root),
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
@@ -292,6 +309,8 @@ args = [ "--port", "4000" ]
 
 describe('codex MCP capability', () => {
   test('is declared on the adapter', () => {
-    expect(adapter.mcpServers).toBe(codexMcpServers)
+    if (adapter.mcpServers === false) expect.unreachable()
+    expect(adapter.mcpServers.supportedScopes).toEqual(codexMcpServers.supportedScopes)
+    expect(adapter.mcpServers.locationEnvironment).toEqual(codexMcpServers.locationEnvironment)
   })
 })

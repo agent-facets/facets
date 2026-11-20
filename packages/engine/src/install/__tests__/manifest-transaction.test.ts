@@ -57,13 +57,13 @@ function installFakeAdapter(baseDir: string, name: string, opts: { failInstall?:
   const sdk = require.resolve('@agent-facets/adapter')
   const planBody = opts.failInstall
     ? `return { ok: false, failure: { code: 'io-failed', path: req.name, message: 'forced failure' } }`
-    : `return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)`
+    : `return planSingleFileInstall({ file: file(req), boundary: base(req), storageRoot: base(req) }, req.content, req.metadata)`
   writeFileSync(
     join(dir, 'adapter.js'),
     `
 import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function base(req) { return join(req.projectRoot, '.${name}') }
+function base(req) { return join(req.context.target.projectRoot, '.${name}') }
 function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
@@ -71,11 +71,13 @@ export default {
   mcpServers: false,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall(req) {
       ${planBody}
     },
     async planRemoval(req) {
-      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+      return planSingleFileRemoval({ file: file(req), boundary: base(req), storageRoot: base(req) })
     },
   },
 }

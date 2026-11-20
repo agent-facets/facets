@@ -552,7 +552,12 @@ function retainedServerConfigurations(
         disposition: claim.materialization,
       }
       if (existing === undefined) {
-        byKey.set(key, { identity: { kind: 'mcp-server', effectiveName }, key, claimants: [claimant] })
+        // A project receipt records project-scoped identities only.
+        byKey.set(key, {
+          identity: { kind: 'mcp-server', scope: 'project', effectiveName },
+          key,
+          claimants: [claimant],
+        })
         continue
       }
       existing.claimants.push(claimant)

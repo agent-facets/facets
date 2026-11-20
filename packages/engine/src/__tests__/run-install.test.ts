@@ -69,15 +69,21 @@ function buildFakeAdapter(name: string): Adapter {
       data: (data ?? {}) as Record<string, unknown>,
     }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         return planSingleFileInstall(
-          { file: path(request.assetType, request.name).file, boundary: baseDir },
+          { file: path(request.assetType, request.name).file, boundary: baseDir, storageRoot: baseDir },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: path(request.assetType, request.name).file, boundary: baseDir })
+        return planSingleFileRemoval({
+          file: path(request.assetType, request.name).file,
+          boundary: baseDir,
+          storageRoot: baseDir,
+        })
       },
     },
   }
@@ -105,15 +111,21 @@ function buildNestedFakeAdapter(name: string): Adapter {
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         return planSingleFileInstall(
-          { file: path(request.assetType, request.name).file, boundary: baseDir },
+          { file: path(request.assetType, request.name).file, boundary: baseDir, storageRoot: baseDir },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: path(request.assetType, request.name).file, boundary: baseDir })
+        return planSingleFileRemoval({
+          file: path(request.assetType, request.name).file,
+          boundary: baseDir,
+          storageRoot: baseDir,
+        })
       },
     },
   }
@@ -134,17 +146,19 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         calls += 1
         if (calls >= throwOnCall) throw new Error(`${name}: boom on call ${calls}`)
         return planSingleFileInstall(
-          { file: file(request), boundary: baseDir },
+          { file: file(request), boundary: baseDir, storageRoot: baseDir },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: file(request), boundary: baseDir })
+        return planSingleFileRemoval({ file: file(request), boundary: baseDir, storageRoot: baseDir })
       },
     },
   }
@@ -162,11 +176,13 @@ function buildBadReadAdapter(name: string): Adapter {
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall() {
         return { ok: false, failure: { code: 'io-failed', path: '/nope', message: 'EACCES: permission denied' } }
       },
       async planRemoval() {
-        return { ok: true, plan: { kind: 'absent', primaryPath: '/nope' } }
+        return { ok: true, plan: { kind: 'absent', primaryPath: '/nope', storageRoot: '/' } }
       },
     },
   }
@@ -1106,6 +1122,7 @@ describe('runInstall — multi-file skill materialization', () => {
       root: join(baseDir, 'skills', n),
       primaryFile: join(baseDir, 'skills', n, 'SKILL.md'),
       boundary: baseDir,
+      storageRoot: baseDir,
     })
     const flatPath = (type: string, n: string) => ({ file: join(baseDir, `${type}s`, `${n}.md`) })
     return {
@@ -1114,6 +1131,8 @@ describe('runInstall — multi-file skill materialization', () => {
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       assets: {
+        supportedScopes: ['project'],
+        locationEnvironment: [],
         async planInstall(request) {
           if (request.assetType === 'skill') {
             return planSkillBundleInstall(skillPaths(request.name), {
@@ -1124,7 +1143,7 @@ describe('runInstall — multi-file skill materialization', () => {
             })
           }
           return planSingleFileInstall(
-            { file: flatPath(request.assetType, request.name).file, boundary: baseDir },
+            { file: flatPath(request.assetType, request.name).file, boundary: baseDir, storageRoot: baseDir },
             request.content,
             request.metadata as Record<string, unknown>,
           )
@@ -1133,7 +1152,11 @@ describe('runInstall — multi-file skill materialization', () => {
           if (request.assetType === 'skill') {
             return planSkillBundleRemoval(skillPaths(request.name), request.ownedCompanionPaths)
           }
-          return planSingleFileRemoval({ file: flatPath(request.assetType, request.name).file, boundary: baseDir })
+          return planSingleFileRemoval({
+            file: flatPath(request.assetType, request.name).file,
+            boundary: baseDir,
+            storageRoot: baseDir,
+          })
         },
       },
     }

@@ -1,9 +1,11 @@
 import type { FileMutationAction } from '@agent-facets/common'
 import type { McpServerDeclaration, ReadonlyMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
+import type { CapabilityDeclarations, PlanningContext, PlanningContextFailure } from './planning-context.ts'
 
 /**
- * The MCP server capability: how an adapter reconciles a project's desired
- * MCP servers into its tool's own native project configuration.
+ * The MCP server capability: how an adapter reconciles one collection's
+ * desired MCP servers into its tool's own native configuration at the
+ * request's project or user scope.
  *
  * The shape of this contract is driven by three requirements:
  *
@@ -38,11 +40,13 @@ export interface McpServerContribution {
 }
 
 /**
- * The complete desired MCP state for one project, handed to `plan`.
+ * The complete desired MCP state for one collection, handed to `plan`.
  *
- * `desired` is exhaustive: a server absent from it is not desired, and
- * `previouslyOwnedNames` is the caller-verified set of effective names a prior
- * successful operation recorded for this adapter. Those two together are what
+ * `context` selects the scope and supplies every location input; planning
+ * inspects and changes only that scope's documents. `desired` is exhaustive:
+ * a server absent from it is not desired, and `previouslyOwnedNames` is the
+ * caller-verified set of effective names a prior successful operation
+ * recorded for the selected collection. Those two together are what
  * let planning classify occupancy — an entry the document has, the desired set
  * lacks, and this list names is obsolete and owned; an entry no list names is
  * someone else's and is never touched.
@@ -51,7 +55,7 @@ export interface McpServerContribution {
  * convention, or from a marker comment.
  */
 export interface PlanMcpServersRequest {
-  readonly projectRoot: string
+  readonly context: PlanningContext
   readonly desired: readonly McpServerContribution[]
   readonly previouslyOwnedNames: readonly string[]
 }
@@ -111,6 +115,18 @@ export type McpServerCapabilityFailure =
   | { readonly code: 'parse-failed'; readonly path: string; readonly message: string }
   /** The document parsed, but its MCP section is not a shape the adapter can safely edit. */
   | { readonly code: 'validation-failed'; readonly path: string; readonly message: string }
+  /**
+   * The planning context names an unsupported scope or is malformed. Detected
+   * before any document is read.
+   */
+  | PlanningContextFailure
+  /**
+   * The adapter's own description of its documents is inconsistent: a
+   * document outside the directory it may write in, or an edit to a document
+   * it never reported reading. No exact prior state exists to plan from, so
+   * nothing is planned.
+   */
+  | { readonly code: 'invalid-document'; readonly path: string; readonly reason: string }
   | McpConflictFailure
 
 /**
@@ -191,8 +207,11 @@ export type PlanMcpServersResult =
  *
  * Planning never launches, connects to, health-checks, or authenticates a
  * declared server; materializing configuration is not running it.
+ *
+ * The declarations state which scopes the capability serves and which
+ * environment variables it reads to find its documents.
  */
-export interface McpServerCapability {
+export interface McpServerCapability extends CapabilityDeclarations {
   plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult>
 }
 

@@ -78,9 +78,16 @@ export function recordingMcpCapability(
   let planCount = 0
 
   const capability: McpServerCapability = {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
+
     async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
       const path = documentPath()
       planCount++
+      const { target } = request.context
+      if (target.scope !== 'project') {
+        return { ok: false, failure: { code: 'unsupported-scope', scope: target.scope, supportedScopes: ['project'] } }
+      }
       record(`plan:${request.desired.length}`)
       options.duringPrepare?.()
       if (options.failPrepare !== undefined) return { ok: false, failure: options.failPrepare }
@@ -137,7 +144,7 @@ export function recordingMcpCapability(
       const first: FileMutation = {
         kind: 'write',
         path,
-        boundary: request.projectRoot,
+        boundary: target.projectRoot,
         expected: inspected.state,
         contents,
       }
@@ -148,7 +155,7 @@ export function recordingMcpCapability(
         mutations.push({
           kind: 'write',
           path: extra,
-          boundary: request.projectRoot,
+          boundary: target.projectRoot,
           expected: extraState.ok ? extraState.state : { kind: 'absent' },
           contents,
         })

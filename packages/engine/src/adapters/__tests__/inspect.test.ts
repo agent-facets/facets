@@ -48,7 +48,7 @@ export default {
   ${api}
   mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: { marker: '${opts.marker ?? 'default'}' } }),
-  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
+  assets: { supportedScopes: ['project'], locationEnvironment: [], planInstall: async () => undefined, planRemoval: async () => undefined },
 }
 `,
   )

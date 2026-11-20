@@ -1756,7 +1756,7 @@ describe('InstallView — MCP configuration outcomes', () => {
 const CONSENT_REQUEST: McpConsentRequest = {
   declarations: [
     {
-      identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
       fingerprint: `sha256:${'a'.repeat(64)}`,
       declaration: { type: 'stdio', command: 'npx', args: ['-y', 'srv'], env: { TOKEN_NAME: 'hunter2' } },
       claimants: [{ facet: 'alpha', authoredName: 'filesystem', disposition: { kind: 'authored' } }],

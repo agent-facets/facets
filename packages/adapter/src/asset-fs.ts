@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import {
   bytesEqual,
   type FileMutation,
@@ -22,7 +22,7 @@ import type { AdapterPlanFailure, PlanAssetInstallResult, PlanAssetRemovalResult
  *   resolve full path  (adapter decides layout per scope/type)
  *       │
  *       ▼
- *   planSingleFileInstall({ file, boundary }, body, metadata)
+ *   planSingleFileInstall({ file, boundary, storageRoot }, body, metadata)
  *       │
  *       ├─ read the file's exact current state (bytes + permissions)
  *       ├─ assemble the desired text:
@@ -56,6 +56,44 @@ export interface AssetFileTarget {
    * without the caller having to trust a bare absolute path.
    */
   readonly boundary: string
+  /**
+   * Absolute storage root the plan discloses for this target and asset type.
+   * The same for every asset of the type, whatever its name; the boundary
+   * must lie at or below it and the file strictly below it.
+   */
+  readonly storageRoot: string
+}
+
+/** Whether `child` is `parent` or one of its descendants. */
+function isAtOrInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child)
+  return rel.length === 0 || (!rel.startsWith('..') && !isAbsolute(rel))
+}
+
+/**
+ * Check that a target's storage root truthfully contains everything the plan
+ * would touch: the authorized directory at or below it, and every planned
+ * path below that directory. Purely textual — run before anything is read.
+ *
+ * Shared by the single-file and skill-bundle planners. A plan whose disclosed
+ * root did not contain its own changes would mislead every caller that
+ * records the root as the place its ownership lives.
+ */
+export function checkStorageRoot(
+  storageRoot: string,
+  boundary: string,
+  paths: readonly string[],
+): { ok: true } | { ok: false; failure: AdapterPlanFailure } {
+  const refuse = (path: string, reason: string) =>
+    ({ ok: false, failure: { code: 'invalid-storage-root', storageRoot, path, reason } }) as const
+  if (!isAbsolute(storageRoot)) return refuse(storageRoot, 'storage root is not an absolute path')
+  const root = resolve(storageRoot)
+  const authorized = resolve(boundary)
+  if (!isAtOrInside(authorized, root)) return refuse(boundary, 'authorized directory is outside the storage root')
+  for (const path of paths) {
+    if (!isAtOrInside(resolve(path), authorized)) return refuse(path, 'path is outside the authorized directory')
+  }
+  return { ok: true }
 }
 
 /** Translate an inspection failure into the adapter's own failure vocabulary. */
@@ -113,12 +151,19 @@ export function planSingleFileInstall(
   body: string,
   metadata?: Record<string, unknown>,
 ): PlanAssetInstallResult {
+  const contained = checkSingleFileTarget(target)
+  if (!contained.ok) return contained
+
   const current = readFileState(target.file)
   if (!current.ok) return current
 
+  const { storageRoot } = target
   const contents = encodeText(assembleAssetContent(body, metadata))
   if (stateHoldsBytes(current.state, contents)) {
-    return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.file } }
+    return {
+      ok: true,
+      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.file, storageRoot },
+    }
   }
 
   const mutation: FileMutation = {
@@ -134,8 +179,27 @@ export function planSingleFileInstall(
       occupancy: current.state.kind === 'absent' ? 'absent' : 'divergent',
       action: { kind: 'mutate', mutations: [mutation] },
       primaryPath: target.file,
+      storageRoot,
     },
   }
+}
+
+/** A single file must lie strictly inside its authorized directory, which lies at or below the root. */
+function checkSingleFileTarget(target: AssetFileTarget): { ok: true } | { ok: false; failure: AdapterPlanFailure } {
+  const contained = checkStorageRoot(target.storageRoot, target.boundary, [target.file])
+  if (!contained.ok) return contained
+  if (!isStrictlyInside(resolve(target.file), resolve(target.boundary))) {
+    return {
+      ok: false,
+      failure: {
+        code: 'invalid-storage-root',
+        storageRoot: target.storageRoot,
+        path: target.file,
+        reason: 'asset file must lie strictly inside the authorized directory',
+      },
+    }
+  }
+  return { ok: true }
 }
 
 /**
@@ -145,16 +209,21 @@ export function planSingleFileInstall(
  * batch would be indistinguishable from an adapter that forgot to plan.
  */
 export function planSingleFileRemoval(target: AssetFileTarget): PlanAssetRemovalResult {
+  const contained = checkSingleFileTarget(target)
+  if (!contained.ok) return contained
+
   const current = readFileState(target.file)
   if (!current.ok) return current
+  const { storageRoot } = target
   if (current.state.kind === 'absent') {
-    return { ok: true, plan: { kind: 'absent', primaryPath: target.file } }
+    return { ok: true, plan: { kind: 'absent', primaryPath: target.file, storageRoot } }
   }
   return {
     ok: true,
     plan: {
       kind: 'remove',
       primaryPath: target.file,
+      storageRoot,
       action: {
         kind: 'mutate',
         mutations: [{ kind: 'delete', path: target.file, boundary: target.boundary, expected: current.state }],
@@ -213,16 +282,20 @@ export function splitAssetContent(raw: string): { content: string; metadata?: Re
 }
 
 /**
- * Assert that an asset name is safe to join onto a filesystem path. Throws
- * a clear error if not. Exposed so adapter implementations can call this
- * defensively before using `name` in `path.join` — defense-in-depth at the
- * planning boundary means a malicious direct caller cannot bypass validation.
+ * Check that an asset name is safe to join onto a filesystem path, as
+ * failure data an adapter can return directly.
+ *
+ * `defineAdapter` applies this to every asset request before the planner
+ * runs. It is exported for adapters assembled without the factory, and for
+ * defense in depth before a name reaches `path.join` — an unsafe name from a
+ * direct caller is an expected input to refuse, not a crash.
  */
-export function assertSafeAssetName(name: string): void {
-  const check = validateAssetName(name)
-  if (!check.ok) {
-    throw new Error(`asset name "${name}" ${check.reason}`)
+export function checkSafeAssetName(name: unknown): { ok: true } | { ok: false; failure: AdapterPlanFailure } {
+  if (typeof name !== 'string') {
+    return { ok: false, failure: { code: 'invalid-asset-name', name: String(name), reason: 'must be a string' } }
   }
+  const check = validateAssetName(name)
+  return check.ok ? { ok: true } : { ok: false, failure: { code: 'invalid-asset-name', name, reason: check.reason } }
 }
 
 /** Result of {@link validateContainedRelativePath}. */

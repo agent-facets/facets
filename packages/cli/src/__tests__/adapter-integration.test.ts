@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,19 +75,32 @@ export default defineAdapter({
 }
 
 describe('adapter install-load-build integration', () => {
+  // Both tests use the same adapter, so it is bundled once for the file. A
+  // second in-process `Bun.build()` of this fixture intermittently fails inside
+  // Bun's bundler with EISDIR while reading a dependency it read successfully
+  // the first time; nothing under test here depends on bundling twice.
+  let bundleRoot: string
+  let bundlePath: string
+
+  beforeAll(async () => {
+    bundleRoot = await mkdtemp(join(tmpdir(), 'facets-adapter-integ-bundle-'))
+    bundlePath = await buildTestAdapter(bundleRoot, 'integ-test-adapter')
+  })
+
+  afterAll(async () => {
+    if (bundleRoot !== undefined) await rm(bundleRoot, { recursive: true, force: true })
+  })
+
   test('installed adapter is loaded and used for manifest validation during build', async () => {
     const testRoot = await mkdtemp(join(tmpdir(), 'facets-adapter-integ-'))
     const adapterBaseDir = join(testRoot, 'adapters-base')
-    const adapterSourceDir = join(testRoot, 'adapter-source')
     const facetDir = join(testRoot, 'facet')
 
     await mkdir(adapterBaseDir, { recursive: true })
-    await mkdir(adapterSourceDir, { recursive: true })
     await mkdir(facetDir, { recursive: true })
 
     try {
-      // Step 1: Build the test adapter bundle
-      const bundlePath = await buildTestAdapter(adapterSourceDir, 'integ-test-adapter')
+      // Step 1: The test adapter bundle was built once for this file (above).
 
       // Step 2: Verify the bundle exports a valid Adapter (exercises the verify module)
       const verifyResult = await verifyAdapter(bundlePath)
@@ -140,15 +153,12 @@ describe('adapter install-load-build integration', () => {
   test('build fails when installed adapter rejects metadata', async () => {
     const testRoot = await mkdtemp(join(tmpdir(), 'facets-adapter-integ-'))
     const adapterBaseDir = join(testRoot, 'adapters-base')
-    const adapterSourceDir = join(testRoot, 'adapter-source')
     const facetDir = join(testRoot, 'facet')
 
     await mkdir(adapterBaseDir, { recursive: true })
-    await mkdir(adapterSourceDir, { recursive: true })
     await mkdir(facetDir, { recursive: true })
 
     try {
-      const bundlePath = await buildTestAdapter(adapterSourceDir, 'integ-test-adapter')
       const verifyResult = await verifyAdapter(bundlePath)
       if (!verifyResult.ok) expect.unreachable()
       await placeAdapter(verifyResult.verified.adapter.name, bundlePath, adapterBaseDir)

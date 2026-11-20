@@ -44,7 +44,7 @@ function installFakeAdapter(baseDir: string, name: string): void {
     `
 import { planSingleFileInstall, planSingleFileRemoval } from '${assetFsImport}'
 import { join } from 'node:path'
-function base(req) { return join(req.projectRoot, '.${name}') }
+function base(req) { return join(req.context.target.projectRoot, '.${name}') }
 function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
@@ -52,11 +52,13 @@ export default {
   mcpServers: false,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall(req) {
-      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+      return planSingleFileInstall({ file: file(req), boundary: base(req), storageRoot: base(req) }, req.content, req.metadata)
     },
     async planRemoval(req) {
-      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+      return planSingleFileRemoval({ file: file(req), boundary: base(req), storageRoot: base(req) })
     },
   },
 }

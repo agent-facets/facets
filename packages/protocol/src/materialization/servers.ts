@@ -1,3 +1,4 @@
+import type { Scope } from '@agent-facets/common'
 import { computeMcpServerFingerprint, type McpServerFingerprint } from '../mcp/fingerprint.ts'
 import { freezeMcpServerDeclaration } from '../mcp/freeze.ts'
 import type {
@@ -28,20 +29,35 @@ import { type MaterializedName, planEffectiveNames } from './effective-name.ts'
  * satisfies every claimant.
  */
 
-/** The identity an MCP configuration is materialized under. Project scope is implicit. */
+/**
+ * The installation scopes a server configuration can be materialized at.
+ * System-wide configuration is never planned, so it is not representable here.
+ */
+type InstallationScope = Exclude<Scope, 'system'>
+
+/**
+ * The identity an MCP configuration is materialized under.
+ *
+ * The scope is part of the identity: a project `docs` and a user `docs` are
+ * two configurations in two different documents, and owning one never
+ * authorizes a change to the other.
+ */
 export interface McpServerIdentity {
   readonly kind: 'mcp-server'
+  readonly scope: InstallationScope
   readonly effectiveName: string
 }
 
 /**
- * The identity space every server claim shares.
+ * The identity space every server claim in one planning run shares.
  *
- * Constant because the portable model is project-scoped only: there is no
- * user- or system-wide MCP configuration in this release, so there is
- * nothing for the space to vary over.
+ * One run plans one collection, so every claim in it shares a scope. The
+ * project space keeps its original spelling, so a project plan groups claims
+ * exactly as it did before user scope existed.
  */
-const SERVER_SPACE = 'project\u0000mcp-server'
+function serverSpace(scope: InstallationScope): string {
+  return `${scope}\u0000mcp-server`
+}
 
 /** Servers are swept as a single override group. */
 const SERVER_GROUPS: readonly string[] = [SERVER_OVERRIDE_GROUP]
@@ -53,9 +69,14 @@ const SERVER_GROUPS: readonly string[] = [SERVER_OVERRIDE_GROUP]
  * delegates management of the identities the project already owns rather
  * than creating a second ownership axis — so the key deliberately carries no
  * adapter.
+ *
+ * A project key keeps its original spelling, so keys recorded before user
+ * scope existed still address the same project identity. A user key carries
+ * its scope, so the two can never address one another. Omitted, the scope is
+ * `project`.
  */
-export function mcpServerKey(effectiveName: string): string {
-  return `mcp-server\u0000${effectiveName}`
+export function mcpServerKey(effectiveName: string, scope: InstallationScope = 'project'): string {
+  return scope === 'project' ? `mcp-server\u0000${effectiveName}` : `${scope}\u0000mcp-server\u0000${effectiveName}`
 }
 
 /** One server a facet authored, with the declaration its manifest carried. */
@@ -307,7 +328,9 @@ type PlanServerClaimsResult<V> =
  */
 function planServerClaims<V extends ServerClaimValue>(
   contributions: readonly ServerClaimContribution<V>[],
+  scope: InstallationScope,
 ): PlanServerClaimsResult<V> {
+  const space = serverSpace(scope)
   const result = planEffectiveNames<V>(
     contributions.map((contribution) => ({
       owner: contribution.facet,
@@ -318,7 +341,7 @@ function planServerClaims<V extends ServerClaimValue>(
         // ordering falls through to the authored name.
         groupOrder: 0,
         authoredName: claim.name,
-        space: SERVER_SPACE,
+        space,
         value: claim.value,
       })),
       overrides: contribution.overrides,
@@ -409,9 +432,15 @@ interface ServerClaim extends ServerClaimValue {
  * name. Claims sharing a fingerprint compose into one configuration; claims
  * that disagree produce one complete collision group naming every claimant,
  * with no winner chosen by ordering.
+ *
+ * `scope` is the installation scope of the collection being planned. It
+ * changes only the identities and keys of the selected configurations —
+ * never naming, composition, collisions, dispositions, ordering, or
+ * fingerprints. Omitted, it is `project`.
  */
 export function planServerMaterialization(
   contributions: readonly ServerContribution[],
+  scope: InstallationScope = 'project',
 ): PlanServerMaterializationResult {
   const result = planServerClaims<ServerClaim>(
     contributions.map((contribution) => ({
@@ -426,6 +455,7 @@ export function planServerMaterialization(
       }),
       overrides: contribution.overrides,
     })),
+    scope,
   )
 
   if (!result.ok) {
@@ -457,8 +487,8 @@ export function planServerMaterialization(
   }))
 
   const configurations: PlannedServerConfiguration[] = result.configurations.map((configuration) => ({
-    identity: { kind: 'mcp-server', effectiveName: configuration.effectiveName },
-    key: mcpServerKey(configuration.effectiveName),
+    identity: { kind: 'mcp-server', scope, effectiveName: configuration.effectiveName },
+    key: mcpServerKey(configuration.effectiveName, scope),
     declaration: configuration.value.declaration,
     fingerprint: configuration.value.fingerprint,
     claimants: configuration.claimants,
@@ -479,9 +509,12 @@ export function planServerMaterialization(
  *
  * Supplied fingerprints are planned as given; nothing in the result asserts
  * they were verified against a declaration or an archive.
+ *
+ * `scope` has exactly the meaning it has for {@link planServerMaterialization}.
  */
 export function planLockedServerInventory(
   contributions: readonly LockedServerContribution[],
+  scope: InstallationScope = 'project',
 ): PlanLockedServerInventoryResult {
   const result = planServerClaims<ServerClaimValue>(
     contributions.map((contribution) => ({
@@ -489,6 +522,7 @@ export function planLockedServerInventory(
       claims: contribution.servers.map((server) => ({ name: server.name, value: { fingerprint: server.fingerprint } })),
       overrides: contribution.overrides,
     })),
+    scope,
   )
 
   if (!result.ok) {
@@ -519,8 +553,8 @@ export function planLockedServerInventory(
       disposition: entry.disposition,
     })),
     configurations: result.configurations.map((configuration) => ({
-      identity: { kind: 'mcp-server', effectiveName: configuration.effectiveName },
-      key: mcpServerKey(configuration.effectiveName),
+      identity: { kind: 'mcp-server', scope, effectiveName: configuration.effectiveName },
+      key: mcpServerKey(configuration.effectiveName, scope),
       fingerprint: configuration.value.fingerprint,
       claimants: configuration.claimants,
     })),

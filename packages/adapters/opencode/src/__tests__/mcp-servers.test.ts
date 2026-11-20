@@ -14,7 +14,24 @@ import {
   STDIO_SERVER,
   UNOWNED_NAME,
 } from '@agent-facets/adapter-test-kit'
-import adapter from '../index.ts'
+import definition from '../index.ts'
+
+/** The adapter the package default-exports, once its definition result is checked. */
+const adapter = (() => {
+  if (!definition.ok) throw new Error('the adapter definition must be valid')
+  return definition.data
+})()
+
+/** A project planning context, with a home that must never be consulted for project placement. */
+function projectContext(projectRoot: string): PlanningContext {
+  return {
+    target: { scope: 'project', projectRoot },
+    homeDirectory: '/home/unused',
+    environment: {},
+  }
+}
+
+import type { PlanningContext } from '@agent-facets/adapter'
 import { openCodeMcpServers } from '../mcp-servers.ts'
 
 /**
@@ -270,7 +287,7 @@ describe('opencode configuration layers', () => {
     desired: readonly McpServerContribution[],
     previouslyOwnedNames: readonly string[],
   ): Promise<PlanMcpServersResult> {
-    return await openCodeMcpServers.plan({ projectRoot: root, desired, previouslyOwnedNames })
+    return await openCodeMcpServers.plan({ context: projectContext(root), desired, previouslyOwnedNames })
   }
 
   /** Reconcile one desired stdio server, returning the paths actually written. */
@@ -547,14 +564,16 @@ describe('opencode configuration layers', () => {
 
 describe('opencode MCP capability', () => {
   test('is declared on the adapter', () => {
-    expect(adapter.mcpServers).toBe(openCodeMcpServers)
+    if (adapter.mcpServers === false) expect.unreachable()
+    expect(adapter.mcpServers.supportedScopes).toEqual(openCodeMcpServers.supportedScopes)
+    expect(adapter.mcpServers.locationEnvironment).toEqual(openCodeMcpServers.locationEnvironment)
   })
 
   test('refuses a declaration OpenCode would interpolate instead of using literally', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opencode-mcp-'))
     try {
       const prepared = await openCodeMcpServers.plan({
-        projectRoot: root,
+        context: projectContext(root),
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv', env: { T: '{env:TOKEN}' } } }],
         previouslyOwnedNames: [],
       })

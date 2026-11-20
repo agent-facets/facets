@@ -4,6 +4,7 @@ import type {
   McpServerContribution,
   McpServersPlan,
   PlanMcpServersRequest,
+  PlanningContext,
 } from '@agent-facets/adapter'
 import { isNonEmpty } from '@agent-facets/common'
 import { compareCodeUnits, type PlannedServerConfiguration } from '@agent-facets/protocol'
@@ -58,7 +59,11 @@ export type PrepareMcpResult =
   | { ok: false; failure: RunInstallFailure }
 
 export interface PrepareMcpArgs {
-  projectRoot: string
+  /**
+   * The operation's planning context, captured once. Retained on every
+   * prepared request so the apply step's replan sees exactly the same inputs.
+   */
+  planningContext: PlanningContext
   /** Every selected adapter, in selection order. */
   adapters: readonly Adapter[]
   /** The active effective configurations this run wants reconciled. */
@@ -91,7 +96,7 @@ export interface PrepareMcpArgs {
  * project: support is only required for work that actually exists.
  */
 export async function prepareMcpServers(args: PrepareMcpArgs): Promise<PrepareMcpResult> {
-  const { projectRoot, adapters, configurations, obsolete, previouslyOwnedNames, onLog } = args
+  const { planningContext, adapters, configurations, obsolete, previouslyOwnedNames, onLog } = args
 
   // No declarations and nothing owned to remove: this project has no MCP
   // state, so no adapter is asked about it and none needs to support it.
@@ -116,7 +121,7 @@ export async function prepareMcpServers(args: PrepareMcpArgs): Promise<PrepareMc
     declaration: configuration.declaration,
   }))
 
-  const request: PlanMcpServersRequest = { projectRoot, desired, previouslyOwnedNames }
+  const request: PlanMcpServersRequest = { context: planningContext, desired, previouslyOwnedNames }
   const prepared: PreparedMcpAdapter[] = []
   for (const { adapter, capability } of support.capable) {
     const result = await capability.plan(request)

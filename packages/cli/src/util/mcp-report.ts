@@ -66,6 +66,12 @@ export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure
       return `${failure.path} could not be parsed: ${failure.message}`
     case 'validation-failed':
       return `${failure.path} is not in a shape it can safely edit: ${failure.message}`
+    case 'unsupported-scope':
+      return `the ${failure.scope} scope is not supported (supported: ${failure.supportedScopes.join(', ') || 'none'})`
+    case 'invalid-target':
+      return `the planning target is invalid: ${failure.field} ${failure.reason}`
+    case 'invalid-document':
+      return `the adapter planned ${failure.path} inconsistently: ${failure.reason}`
     case 'conflict':
       return describeMcpConflict(failure)
   }

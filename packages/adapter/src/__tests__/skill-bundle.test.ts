@@ -15,6 +15,7 @@ beforeEach(() => {
     root: join(root, 'skills', 'planning'),
     primaryFile: join(root, 'skills', 'planning', 'SKILL.md'),
     boundary: root,
+    storageRoot: root,
   }
 })
 
@@ -148,7 +149,7 @@ describe('planSkillBundleInstall', () => {
 
     test('rejects a primary outside the declared skill root', () => {
       const result = planSkillBundleInstall(
-        { root: target.root, primaryFile: join(root, 'elsewhere.md'), boundary: root },
+        { root: target.root, primaryFile: join(root, 'elsewhere.md'), boundary: root, storageRoot: root },
         bundle(),
       )
       if (result.ok) expect.unreachable()
@@ -210,5 +211,65 @@ describe('planSkillBundleRemoval', () => {
     const result = planSkillBundleRemoval(target, ['../escape.md'])
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('invalid-companion-path')
+  })
+})
+
+describe('skill storage-root disclosure', () => {
+  const skills = () => join(root, 'skills')
+  const skill = (name: string): SkillBundleTarget => ({
+    root: join(skills(), name),
+    primaryFile: join(skills(), name, 'SKILL.md'),
+    boundary: skills(),
+    storageRoot: skills(),
+  })
+
+  test('install discloses the root when absent, divergent, and equivalent', () => {
+    const fresh = planSkillBundleInstall(skill('planning'), bundle())
+    seed(skill('planning').primaryFile, 'hand written\n')
+    const divergent = planSkillBundleInstall(skill('planning'), bundle())
+    seed(skill('planning').primaryFile, assembleAssetContent('# planning\n', { name: 'planning' }))
+    const equivalent = planSkillBundleInstall(skill('planning'), bundle())
+
+    for (const result of [fresh, divergent, equivalent]) {
+      if (!result.ok) expect.unreachable()
+      expect(result.plan.storageRoot).toBe(skills())
+    }
+    if (!equivalent.ok) expect.unreachable()
+    expect(equivalent.plan.action.kind).toBe('unchanged')
+  })
+
+  test('removal discloses the root when nothing is there', () => {
+    const result = planSkillBundleRemoval(skill('planning'), [])
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.kind).toBe('absent')
+    expect(result.plan.storageRoot).toBe(skills())
+  })
+
+  test('the root is the same for every skill name', () => {
+    const review = planSkillBundleInstall(skill('review'), bundle())
+    const planning = planSkillBundleInstall(skill('planning'), bundle())
+    if (!review.ok || !planning.ok) expect.unreachable()
+    expect(review.plan.storageRoot).toBe(planning.plan.storageRoot)
+  })
+
+  test('every planned change lies below the disclosed root', () => {
+    const result = planSkillBundleInstall(skill('planning'), bundle({ 'assets/logo.png': new Uint8Array([0xff, 0]) }))
+    if (!result.ok) expect.unreachable()
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    for (const mutation of result.plan.action.mutations) {
+      expect(mutation.path.startsWith(`${skills()}/`)).toBe(true)
+      expect(`${mutation.boundary}/`.startsWith(`${skills()}/`)).toBe(true)
+    }
+  })
+
+  test('a skill root outside its authorized directory is refused before reading', () => {
+    const result = planSkillBundleInstall({ ...skill('planning'), boundary: join(root, 'agents') }, bundle())
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('invalid-storage-root')
+  })
+
+  test('planning a missing tree creates nothing', () => {
+    planSkillBundleInstall(skill('planning'), bundle({ 'references/api.md': encode('api\n') }))
+    expect(() => statSync(skills())).toThrow()
   })
 })

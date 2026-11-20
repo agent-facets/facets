@@ -8,7 +8,7 @@ import { McpApprovalScreen } from '../approval.tsx'
 const REQUEST: McpConsentRequest = {
   declarations: [
     {
-      identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'filesystem' },
       fingerprint: `sha256:${'a'.repeat(64)}`,
       declaration: { type: 'stdio', command: 'npx', args: ['-y', 'srv'], env: { TOKEN_NAME: 'A' } },
       claimants: [{ facet: 'alpha', authoredName: 'filesystem', disposition: { kind: 'authored' } }],
@@ -18,7 +18,7 @@ const REQUEST: McpConsentRequest = {
   takeovers: [
     {
       adapter: 'claude-code',
-      identity: { kind: 'mcp-server', effectiveName: 'docs' },
+      identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'docs' },
       existing: 'divergent',
       declaration: { type: 'http', url: 'https://mcp.example.com/mcp' },
     },
@@ -73,14 +73,14 @@ test('every declaration and every takeover is shown, not just the first', async 
     declarations: [
       ...REQUEST.declarations,
       {
-        identity: { kind: 'mcp-server', effectiveName: 'search' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'search' },
         fingerprint: `sha256:${'b'.repeat(64)}`,
         declaration: { type: 'stdio', command: 'search-mcp', args: ['--index', 'local'] },
         claimants: [{ facet: 'beta', authoredName: 'search', disposition: { kind: 'authored' } }],
         standing: { kind: 'declaration-changed' },
       },
       {
-        identity: { kind: 'mcp-server', effectiveName: 'issues' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'issues' },
         fingerprint: `sha256:${'c'.repeat(64)}`,
         declaration: { type: 'http', url: 'https://issues.example.com/mcp' },
         claimants: [{ facet: 'gamma', authoredName: 'issues', disposition: { kind: 'authored' } }],
@@ -91,7 +91,7 @@ test('every declaration and every takeover is shown, not just the first', async 
       ...REQUEST.takeovers,
       {
         adapter: 'opencode',
-        identity: { kind: 'mcp-server', effectiveName: 'notes' },
+        identity: { kind: 'mcp-server', scope: 'project', effectiveName: 'notes' },
         existing: 'equivalent',
         declaration: { type: 'stdio', command: 'notes-mcp' },
       },

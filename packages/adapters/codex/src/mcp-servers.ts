@@ -93,10 +93,17 @@ const PORTABLE_KEYS: Readonly<Record<'stdio' | 'http', ReadonlySet<string>>> = {
 const INLINE_TABLE_DEPTH = 2
 
 export const codexMcpServers: McpServerCapability = {
-  async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
-    const path = join(request.projectRoot, ...DOCUMENT_PATH)
+  supportedScopes: ['project'],
+  locationEnvironment: [],
 
-    const read = readTextOrAbsent(path)
+  async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
+    const { target } = request.context
+    if (target.scope !== 'project') {
+      return { ok: false, failure: { code: 'unsupported-scope', scope: target.scope, supportedScopes: ['project'] } }
+    }
+    const path = join(target.projectRoot, ...DOCUMENT_PATH)
+
+    const read = readTextOrAbsent(path, target.projectRoot)
     if (!read.ok) return { ok: false, failure: read.failure }
     const text = read.text
 

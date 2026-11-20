@@ -157,7 +157,7 @@ function installFakeAdapter(baseDir: string, name: string): void {
     `
 import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function base(req) { return join(req.projectRoot, '.${name}') }
+function base(req) { return join(req.context.target.projectRoot, '.${name}') }
 function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
@@ -165,11 +165,13 @@ export default {
   mcpServers: false,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   assets: {
+    supportedScopes: ['project'],
+    locationEnvironment: [],
     async planInstall(req) {
-      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+      return planSingleFileInstall({ file: file(req), boundary: base(req), storageRoot: base(req) }, req.content, req.metadata)
     },
     async planRemoval(req) {
-      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+      return planSingleFileRemoval({ file: file(req), boundary: base(req), storageRoot: base(req) })
     },
   },
 }
@@ -201,15 +203,21 @@ function mcpCapableAdapter(): Adapter {
     mcpServers: mcp.capability,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     assets: {
+      supportedScopes: ['project'],
+      locationEnvironment: [],
       async planInstall(request) {
         return planSingleFileInstall(
-          { file: file(request.assetType, request.name), boundary: baseDir() },
+          { file: file(request.assetType, request.name), boundary: baseDir(), storageRoot: baseDir() },
           request.content,
           request.metadata as Record<string, unknown>,
         )
       },
       async planRemoval(request) {
-        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+        return planSingleFileRemoval({
+          file: file(request.assetType, request.name),
+          boundary: baseDir(),
+          storageRoot: baseDir(),
+        })
       },
     },
   }

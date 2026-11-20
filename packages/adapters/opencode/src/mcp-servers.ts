@@ -210,8 +210,15 @@ function pendingEdit(layer: Layer): TextDocumentEdit | null {
 }
 
 export const openCodeMcpServers: McpServerCapability = {
+  supportedScopes: ['project'],
+  locationEnvironment: [],
+
   async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
-    const read = readLayers(request.projectRoot)
+    const { target: requested } = request.context
+    if (requested.scope !== 'project') {
+      return { ok: false, failure: { code: 'unsupported-scope', scope: requested.scope, supportedScopes: ['project'] } }
+    }
+    const read = readLayers(requested.projectRoot)
     if (!read.ok) return { ok: false, failure: read.failure }
     const layers = read.layers
 
@@ -331,7 +338,7 @@ type ReadLayerResult =
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
 function readLayer(projectRoot: string, candidate: string): ReadLayerResult {
-  const read = readTextOrAbsent(join(projectRoot, candidate))
+  const read = readTextOrAbsent(join(projectRoot, candidate), projectRoot)
   if (!read.ok) return { ok: false, failure: read.failure }
   return parseLayer(read.document, read.text)
 }

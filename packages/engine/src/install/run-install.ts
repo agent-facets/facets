@@ -53,6 +53,7 @@ import {
 } from './mcp/outcomes.ts'
 import { prepareMcpServers } from './mcp/prepare.ts'
 import { ownEntry } from './own-entry.ts'
+import { captureProjectPlanningContext } from './planning-context.ts'
 import { readProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
@@ -284,6 +285,13 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return failureNoMutation({ code: 'ADAPTER_INCOMPATIBLE', failures: incompatibleAdapters })
     }
 
+    // 3c. The planning context, captured once and handed unchanged to every
+    //     adapter request this run makes — so preparation and every replan
+    //     agree on where things live even if the process environment changes
+    //     mid-run. Captured only after the preflight above, because only a
+    //     compatible adapter's capability declarations can be read.
+    const planningContext = captureProjectPlanningContext(projectRoot, adapters)
+
     // 4. Frozen-lockfile gate. A frozen run is only constructible as a
     //    reproduction, so there is nothing to check about the operation
     //    itself here. The drift preflight runs before any mutation/journal
@@ -385,7 +393,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // consent is asked for either — removal withdraws authorization, it
       // never grants it.
       const refinedMcp = await prepareMcpServers({
-        projectRoot,
+        planningContext,
         adapters,
         configurations: [],
         obsolete: refined.obsoleteConfigurations,
@@ -426,7 +434,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
       const obsolete = obsoleteOwnership(previousOwnership, refined.materialized)
       const deletion = await deleteObsoleteAssets({
-        projectRoot,
+        planningContext,
         adapters: [...adapters],
         obsolete,
         transaction,
@@ -592,7 +600,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //     honor, and a user cannot be asked to approve a change nothing has
     //     computed yet.
     const preparedMcp = await prepareMcpServers({
-      projectRoot,
+      planningContext,
       adapters,
       configurations: plan.mcpServers.configurations,
       obsolete: obsoleteConfigurations,
@@ -686,7 +694,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    identity still claimed by any desired asset is retained outright.
     const obsolete = obsoleteOwnership(previousOwnership, plan.materialized)
     const deletion = await deleteObsoleteAssets({
-      projectRoot,
+      planningContext,
       adapters: [...adapters],
       obsolete,
       transaction,
@@ -706,7 +714,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       resolved,
       plan,
       previousOwnership,
-      projectRoot,
+      planningContext,
       adapters,
       transaction,
       // Frozen mode reproduces recorded intent and never collects a new

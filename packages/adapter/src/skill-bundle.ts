@@ -2,6 +2,7 @@ import { basename, join, resolve } from 'node:path'
 import type { FileMutation, FileState } from '@agent-facets/common'
 import {
   assembleAssetContent,
+  checkStorageRoot,
   encodeText,
   isStrictlyInside,
   readFileState,
@@ -43,6 +44,12 @@ export interface SkillBundleTarget {
    * must fall strictly inside it; it is never created or removed.
    */
   readonly boundary: string
+  /**
+   * Absolute storage root the plan discloses for this target's skills. The
+   * same for every skill, whatever its name; the boundary must lie at or
+   * below it, and the skill root at or below the boundary.
+   */
+  readonly storageRoot: string
 }
 
 /** What a skill install plans to put on disk. */
@@ -94,6 +101,9 @@ function resolveCompanionPaths(
   target: SkillBundleTarget,
   supplied: Iterable<string>,
 ): ResolvedCompanions | { ok: false; failure: AdapterPlanFailure } {
+  const contained = checkStorageRoot(target.storageRoot, target.boundary, [target.root])
+  if (!contained.ok) return contained
+
   const root = resolve(target.root)
   const primaryAbs = resolve(target.primaryFile)
   if (!isStrictlyInside(primaryAbs, root)) {
@@ -210,18 +220,12 @@ export function planSkillBundleInstall(target: SkillBundleTarget, bundle: SkillB
     mutations.push({ kind: 'delete', path: abs, boundary: target.boundary, expected: state.state })
   }
 
-  if (!differs) {
-    return {
-      ok: true,
-      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.primaryFile },
-    }
-  }
-
+  const { storageRoot } = target
   const [first, ...rest] = mutations
-  if (first === undefined) {
+  if (!differs || first === undefined) {
     return {
       ok: true,
-      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.primaryFile },
+      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.primaryFile, storageRoot },
     }
   }
 
@@ -231,7 +235,12 @@ export function planSkillBundleInstall(target: SkillBundleTarget, bundle: SkillB
   const occupancy: Exclude<AssetOccupancy, 'equivalent'> = primaryState.state.kind === 'absent' ? 'absent' : 'divergent'
   return {
     ok: true,
-    plan: { occupancy, action: { kind: 'mutate', mutations: [first, ...rest] }, primaryPath: target.primaryFile },
+    plan: {
+      occupancy,
+      action: { kind: 'mutate', mutations: [first, ...rest] },
+      primaryPath: target.primaryFile,
+      storageRoot,
+    },
   }
 }
 
@@ -266,15 +275,17 @@ export function planSkillBundleRemoval(
     addDeletion(abs, state.state)
   }
 
+  const { storageRoot } = target
   const [first, ...rest] = mutations
   if (first === undefined) {
-    return { ok: true, plan: { kind: 'absent', primaryPath: target.primaryFile } }
+    return { ok: true, plan: { kind: 'absent', primaryPath: target.primaryFile, storageRoot } }
   }
   return {
     ok: true,
     plan: {
       kind: 'remove',
       primaryPath: target.primaryFile,
+      storageRoot,
       action: { kind: 'mutate', mutations: [first, ...rest] },
     },
   }

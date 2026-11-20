@@ -1,14 +1,14 @@
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   type AssetCapability,
   type AssetFileTarget,
-  type AssetRequestContext,
   type AssetType,
+  checkStorageRoot,
   defineAdapter,
   encodeText,
   errorMessage,
   type PlanAssetInstallResult,
+  type PlanningContext,
   planSingleFileInstall,
   planSingleFileRemoval,
   planSkillBundleInstall,
@@ -37,51 +37,56 @@ const CodexMetadataSchema = type({
   'developer_instructions?': 'string',
 })
 
+/** The scopes this adapter serves. User scope arrives with its native layout. */
+const SUPPORTED_SCOPES = ['project'] as const
+
 /**
- * Codex's conventional layout — two separate trees, keyed on asset type:
+ * Codex's conventional project layout — two separate trees, keyed on asset
+ * type:
  *
- *   Skills  (project)  → <projectRoot>/.agents/skills/<name>/SKILL.md
- *   Skills  (user)     → ~/.agents/skills/<name>/SKILL.md
+ *   Skills   → <projectRoot>/.agents/skills/<name>/SKILL.md
+ *   Agents   → <projectRoot>/.codex/agents/<name>.toml
+ *   Commands → <projectRoot>/.agents/commands/<name>.md
  *
- *   Agents  (project)  → <projectRoot>/.codex/agents/<name>.toml
- *   Agents  (user)     → ~/.codex/agents/<name>.toml
+ * The project command mapping is retained legacy behavior, not an
+ * established native Codex capability; repairing it is separate work.
  *
- *   Commands (project) → <projectRoot>/.agents/commands/<name>.md
- *   Commands (user)    → ~/.agents/commands/<name>.md
+ * The project root comes from the request's planning context, never from the
+ * process working directory: the caller may be installing into a tree it is
+ * not sitting in.
  *
- * The project root comes from the request, never from the process working
- * directory: the caller may be installing into a tree it is not sitting in.
- *
- * `system` scope is unsupported; returns `null` so callers get a structured
+ * Any other target returns `null`, so callers get a structured
  * `unsupported-scope` failure.
  */
-function baseDirFor(context: AssetRequestContext, assetType: AssetType): string | null {
+function baseDirFor(context: PlanningContext, assetType: AssetType): string | null {
   const tree = assetType === 'agent' ? '.codex' : '.agents'
-  switch (context.scope) {
-    case 'user':
-      return join(process.env.HOME ?? homedir(), tree)
-    case 'project':
-      return join(context.projectRoot, tree)
-    case 'system':
-      return null
-  }
+  return context.target.scope === 'project' ? join(context.target.projectRoot, tree) : null
 }
 
+function unsupportedScope(context: PlanningContext) {
+  return {
+    ok: false,
+    failure: { code: 'unsupported-scope', scope: context.target.scope, supportedScopes: SUPPORTED_SCOPES },
+  } as const
+}
+
+/** The base directory is the mutation boundary and the disclosed storage root for its asset type. */
 function fileTarget(baseDir: string, directory: string, name: string, extension: string): AssetFileTarget {
-  return { file: join(baseDir, directory, `${name}.${extension}`), boundary: baseDir }
+  return { file: join(baseDir, directory, `${name}.${extension}`), boundary: baseDir, storageRoot: baseDir }
 }
 
 function skillTarget(baseDir: string, name: string): SkillBundleTarget {
   const root = join(baseDir, 'skills', name)
-  return { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir }
+  return { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir, storageRoot: baseDir }
 }
 
 const assets: AssetCapability = {
+  supportedScopes: SUPPORTED_SCOPES,
+  locationEnvironment: [],
+
   async planInstall(request) {
-    const baseDir = baseDirFor(request, request.assetType)
-    if (baseDir === null) {
-      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
-    }
+    const baseDir = baseDirFor(request.context, request.assetType)
+    if (baseDir === null) return unsupportedScope(request.context)
     const metadata = request.metadata as Record<string, unknown>
     switch (request.assetType) {
       case 'skill':
@@ -99,10 +104,8 @@ const assets: AssetCapability = {
   },
 
   async planRemoval(request) {
-    const baseDir = baseDirFor(request, request.assetType)
-    if (baseDir === null) {
-      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
-    }
+    const baseDir = baseDirFor(request.context, request.assetType)
+    if (baseDir === null) return unsupportedScope(request.context)
     switch (request.assetType) {
       case 'skill':
         return planSkillBundleRemoval(skillTarget(baseDir, request.name), request.ownedCompanionPaths)
@@ -177,14 +180,21 @@ function planAgentToml(
     desired.developer_instructions = content
   }
 
+  const contained = checkStorageRoot(target.storageRoot, target.boundary, [target.file])
+  if (!contained.ok) return contained
+
   const current = readFileState(target.file)
   if (!current.ok) return current
 
+  const { storageRoot } = target
+  const unchanged = {
+    ok: true,
+    plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.file, storageRoot },
+  } as const
+
   if (current.state.kind === 'regular-file') {
     const existing = parseAgentToml(current.state.contents)
-    if (existing !== null && sameTomlDocument(existing, desired)) {
-      return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.file } }
-    }
+    if (existing !== null && sameTomlDocument(existing, desired)) return unchanged
   }
 
   let rendered: string
@@ -195,15 +205,14 @@ function planAgentToml(
   }
 
   const contents = encodeText(rendered)
-  if (stateHoldsBytes(current.state, contents)) {
-    return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.file } }
-  }
+  if (stateHoldsBytes(current.state, contents)) return unchanged
 
   return {
     ok: true,
     plan: {
       occupancy: current.state.kind === 'absent' ? 'absent' : 'divergent',
       primaryPath: target.file,
+      storageRoot,
       action: {
         kind: 'mutate',
         mutations: [
